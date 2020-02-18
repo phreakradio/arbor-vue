@@ -36,18 +36,17 @@
  *
  */
  
- var Easing = (function(){
-  var that = {
+ const Easing = {
     // t: current time, b: beginning value, c: change in value, d: duration   
     linear: function(t, b, c, d){
-      return c*(t/d) + b
+        return c*(t/d) + b
     },
     quadin: function (t, b, c, d) {
-  		return c*(t/=d)*t + b;
-  	},
+        return c*(t/=d)*t + b;
+    },
     quadout: function (t, b, c, d) {
-  		return -c *(t/=d)*(t-2) + b;
-  	},
+        return -c *(t/=d)*(t-2) + b;
+    },
     quadinout: function (t, b, c, d) {
   		if ((t/=d/2) < 1) return c/2*t*t + b;
   		return -c/2 * ((--t)*(t-2) - 1) + b;
@@ -166,6 +165,6 @@
   		if (t < d/2) return that.bounceIn (t*2, 0, c, d) * .5 + b;
   		return that.bounceOut(t*2-d, 0, c, d) * .5 + c*.5 + b;
   	}
-	}
-	return that
-})()
+}
+
+module.exports = Easing;

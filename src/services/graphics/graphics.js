@@ -6,14 +6,26 @@
 //
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
-
+import cloneDeep from 'lodash/cloneDeep';
 import forEach from 'lodash/forEach';
 import isEmpty from 'lodash/isEmpty';
+import mergeWith from 'lodash/mergeWith';
 
-import Colors from './colors.js';
-import Primitives from './primitives.js'
+const Colors = require('./colors.js');
+const Primitives =require('./primitives.js');
 
-export default class Graphics{
+const nano = (template, data) => {
+    return template.replace(/\{([\w\-\.]*)}/g, function(str, key){
+        var keys = key.split("."), value = data[keys.shift()];
+        forEach(keys, function(k){ 
+            if (value.hasOwnProperty(k)) value = value[k];
+            else value = str;
+        });
+        return value;
+    });
+};
+
+class Graphics{
     constructor(canvas){
         this.dom = document.getElementById(canvas);
         this.ctx = this.dom.getContext('2d');
@@ -44,18 +56,18 @@ export default class Graphics{
         this._lineBuffer = []; // calls to .lines sit here until flushed by .drawlines
 
         ///MACRO:primitives-start
-        this.primitives = Primitives(this.ctx, this._drawStyle, this._fontStyle);
-        this._Oval = this.primitives._Oval;
-        this._Rect = this.primitives._Rect;
-        this._Color = this.primitives._Color;
-        this._Path = this.primitives._Path;
+        this.primitives = new Primitives(this.ctx, this._drawStyle, this._fontStyle);
+        this._Oval = this.primitives.Oval;
+        this._Rect = this.primitives.Rect;
+        this._Color = this.primitives.Color;
+        this._Path = this.primitives.Path;
         ///MACRO:primitives-end            
     }
 
     // canvas-wide settings
     size(width,height){
         if (!isNaN(width) && !isNaN(height)){
-            this.dom.attr({width:width,height:height})
+            this.dom.attr({width:width,height:height});
         }
         return { width:this.dom.attr('width'), height:this.dom.attr('height') };
     }
@@ -99,7 +111,7 @@ export default class Graphics{
             return this._drawStyle.fill;
         }
         else if (arguments.length>0){
-            var fillColor = Colors.decode(a,b,c,d);
+            let fillColor = Colors.decode(a,b,c,d);
             this._drawStyle.fill = fillColor;
             this.ctx.fillStyle = Colors.encode(fillColor);
         }
@@ -126,25 +138,13 @@ export default class Graphics{
         this.ctx.lineWidth = this._drawStyle.width = ptsize;
     }
     
-    
-    // Color:function(clr){
-    //   return new _Color(clr)
-    // },
-
-
-    // Font:function(fontName, pointSize){
-    //   return new _Font(fontName, pointSize)
-    // },
-    // font:function(fontName, pointSize){
-    //   if (fontName!==undefined) _fontStyle.font = fontName
-    //   if (pointSize!==undefined) _fontStyle.size = pointSize
-    //   ctx.font = nano("{size}px {font}", _fontStyle)
-    // },
-
+    Color(clr){
+        return new this._Color(clr);
+    },
 
     drawStyle(style){
         // without arguments, show the current state
-        if (arguments.length==0) return objcopy(this._drawStyle);
+        if (arguments.length==0) return cloneDeep(this._drawStyle);
 
         // if this is a ("stylename", {style}) invocation, don't change the current
         // state but add it to the library
@@ -179,7 +179,7 @@ export default class Graphics{
             if (style[color]!==undefined){
                 if (style[color]===null) this._drawStyle[color] = null;
                 else{
-                    var useColor = Colors.decode(style[color]);
+                    let useColor = Colors.decode(style[color]);
                     if (useColor) this._drawStyle[color] = useColor;
                 }
             }
@@ -191,17 +191,17 @@ export default class Graphics{
 
     textStyle(style){
         // without arguments, show the current state
-        if (arguments.length==0) return objcopy(this._fontStyle);
+        if (arguments.length==0) return cloneDeep(this._fontStyle);
 
         // if this is a ("name", {style}) invocation, don't change the current
         // state but add it to the library
         if (arguments.length==2){
-            var styleName = arguments[0];
-            var styleDef = arguments[1];
+            let styleName = arguments[0];
+            let styleDef = arguments[1];
             if (typeof styleName=='string' && typeof styleDef=='object'){
-                var newStyle = {};
+                let newStyle = {};
                 if (styleDef.color!==undefined){
-                    var textColor = Colors.decode(styleDef.color);
+                    let textColor = Colors.decode(styleDef.color);
                     if (textColor) newStyle.color = textColor;
                 }
                 forEach('font size align baseline alpha'.split(' '), function(param){
@@ -229,11 +229,11 @@ export default class Graphics{
 
         if (style.alpha!==undefined) this._fontStyle.alpha = style.alpha;
         if (style.color!==undefined){
-            var textColor = Colors.decode(style.color);
+            let textColor = Colors.decode(style.color);
             if (textColor) this._fontStyle.color = textColor;
         }
         if (this._fontStyle.color){
-            var textColor = Colors.blend(this._fontStyle.color, this._fontStyle.alpha);
+            let textColor = Colors.blend(this._fontStyle.color, this._fontStyle.alpha);
             if (textColor) this.ctx.fillStyle = textColor;
         }
     }
@@ -251,7 +251,7 @@ export default class Graphics{
             opts = opts || {};
         }
 
-        var style = objmerge(this._fontStyle, opts);
+        let style = mergeWith(this._fontStyle, opts);
         this.ctx.save();
         if (style.align!==undefined) this.ctx.textAlign = style.align;
         if (style.baseline!==undefined) this.ctx.textBaseline = style.baseline;
@@ -279,60 +279,45 @@ export default class Graphics{
     // shape primitives.
     // classes will return an {x,y,w,h, fill(), stroke()} object without drawing
     // functions will draw the shape based on current stroke/fill state
-    Rect:function(x,y,w,h,r,style){
-      return new _Rect(x,y,w,h,r,style)
+    Rect(x,y,w,h,r,style){
+        return new this._Rect(x,y,w,h,r,style);
     },
-    rect:function(x, y, w, h, r, style){
-      _Rect.prototype._draw(x,y,w,h,r,style)
-    },
-    
-    Oval:function(x, y, w, h, style) {
-      return new _Oval(x,y,w,h, style)
-    },
-    oval:function(x, y, w, h, style) {
-      style = style || {}
-      _Oval.prototype._draw(x,y,w,h, style)
+    rect(x, y, w, h, r, style){
+        this._Rect.prototype._draw(x,y,w,h,r,style)
     },
     
+    Oval(x, y, w, h, style) {
+        return new this._Oval(x,y,w,h, style);
+    },
+    oval(x, y, w, h, style) {
+        style = style || {};
+        this._Oval.prototype._draw(x,y,w,h, style);
+    }
+
     // draw a line immediately
-    line:function(x1, y1, x2, y2, style){
-      var p = new _Path(x1,y1,x2,y2)
-      p.draw(style)
-    },
+    line(x1, y1, x2, y2, style){
+        let p = new _Path(x1,y1,x2,y2);
+        p.draw(style);
+    }
     
     // queue up a line segment to be drawn in a batch by .drawLines
-    lines:function(x1, y1, x2, y2){
-      if (typeof y2=='number'){
-        // ƒ( x1, y1, x2, y2)
-        _lineBuffer.push( [ {x:x1,y:y1}, {x:x2,y:y2} ] )
-      }else{
-        // ƒ( {x:1, y:1}, {x:2, y:2} )
-        _lineBuffer.push( [ x1,y1 ] )
-      }
-    },
+    lines(x1, y1, x2, y2){
+        if (typeof y2=='number'){
+            // ƒ( x1, y1, x2, y2)
+            this._lineBuffer.push( [ {x:x1,y:y1}, {x:x2,y:y2} ] );
+        }
+        else{
+            // ƒ( {x:1, y:1}, {x:2, y:2} )
+            this._lineBuffer.push( [ x1,y1 ] );
+        }
+    }
     
     // flush the buffered .lines to screen
-    drawLines:function(style){
-      var p = new _Path(_lineBuffer)
-      p.draw(style)
-      _lineBuffer = []
+    drawLines(style){
+        let p = new this._Path(this._lineBuffer);
+        p.draw(style);
+        this._lineBuffer = [];
     }    
 }
 
-
-var Graphics = function(canvas){
-
-  
-  var that = {
-    init:function(){
-      if (!ctx) return null
-      return that
-    },
-
-
-    
-
-  }
-  
-  return that.init()    
-}
+module.exports = Graphics;
