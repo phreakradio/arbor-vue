@@ -11,11 +11,12 @@ import forEach from 'lodash/forEach';
 import isEmpty from 'lodash/isEmpty';
 import mergeWith from 'lodash/mergeWith';
 
-const Colors = require('./colors.js');
-const Primitives =require('./primitives.js');
+import Colors from './colors.js';
+import Primitives from './primitives.js';
 
+/*eslint no-useless-escape: "error"*/
 const nano = (template, data) => {
-    return template.replace(/\{([\w\-\.]*)}/g, function(str, key){
+    return template.replace(/\{([\w\-.]*)}/g, function(str, key){
         var keys = key.split("."), value = data[keys.shift()];
         forEach(keys, function(k){ 
             if (value.hasOwnProperty(k)) value = value[k];
@@ -86,7 +87,7 @@ class Graphics{
             this.ctx.fillRect(x,y,w,h);
             this.ctx.restore();
         }
-    },
+    }
 
     background(a,b,c,d){
         if (a==null){
@@ -140,7 +141,7 @@ class Graphics{
     
     Color(clr){
         return new this._Color(clr);
-    },
+    }
 
     drawStyle(style){
         // without arguments, show the current state
@@ -268,7 +269,7 @@ class Graphics{
     }
 
     textWidth(textStr, style){
-        style = objmerge(this._fontStyle, style||{});
+        style = mergeWith(this._fontStyle, style||{});
         this.ctx.save();
         this.ctx.font = nano("{size}px {font}", style);
         var width = this.ctx.measureText(textStr).width;
@@ -281,14 +282,16 @@ class Graphics{
     // functions will draw the shape based on current stroke/fill state
     Rect(x,y,w,h,r,style){
         return new this._Rect(x,y,w,h,r,style);
-    },
+    }
+
     rect(x, y, w, h, r, style){
         this._Rect.prototype._draw(x,y,w,h,r,style)
-    },
+    }
     
     Oval(x, y, w, h, style) {
         return new this._Oval(x,y,w,h, style);
-    },
+    }
+
     oval(x, y, w, h, style) {
         style = style || {};
         this._Oval.prototype._draw(x,y,w,h, style);
@@ -296,7 +299,7 @@ class Graphics{
 
     // draw a line immediately
     line(x1, y1, x2, y2, style){
-        let p = new _Path(x1,y1,x2,y2);
+        let p = new this._Path(x1,y1,x2,y2);
         p.draw(style);
     }
     

@@ -220,7 +220,7 @@ class Renderer{
 				}
 				
 				return false
-			}
+			},
 
 			clicked:function(e){
 				var pos = this.canvas.offset();
@@ -246,7 +246,7 @@ class Renderer{
 				// $(window).bind('mouseup', handler.dropped)
 
 				return false;
-			}
+			},
 
 			dragged:function(e){
 				let old_nearest = nearest && nearest.node._id;
@@ -260,7 +260,7 @@ class Renderer{
 				}
 
 				return false;
-			}
+			},
 
 			dropped:function(e){
 				if (dragged===null || dragged.node===undefined) return;

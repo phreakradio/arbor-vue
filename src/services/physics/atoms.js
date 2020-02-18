@@ -48,8 +48,8 @@ var Spring = function(point1, point2, length, k){
 };
 Spring.prototype.distanceToParticle = function(point){
     // see http://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment/865080#865080
-    var n = that.point2.p.subtract(that.point1.p).normalize().normal();
-    var ac = point.p.subtract(that.point1.p);
+    var n = this.point2.p.subtract(this.point1.p).normalize().normal();
+    var ac = point.p.subtract(this.point1.p);
     return Math.abs(ac.x * n.x + ac.y * n.y);
 };
 
@@ -92,4 +92,9 @@ Point.prototype = {
         return this.divide(this.magnitude());
     }
 }
+module.exports = Node;
+module.exports = Edge;
+module.exports = Particle;
+module.exports = Spring;
+module.exports = Point;
 

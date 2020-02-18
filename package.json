@@ -9,7 +9,7 @@
     "lint": "vue-cli-service lint",
     "test": "mocha"
   },
-  "main": "./dist/arbor-vue.common.js",
+  "main": "./main.js",
   "dependencies": {
     "core-js": "^3.4.4",
     "lodash": "^4.17.15",
@@ -24,5 +24,8 @@
     "eslint-plugin-vue": "^5.0.0",
     "mocha": "^7.0.1",
     "vue-template-compiler": "^2.6.10"
+  },
+  "resolutions": {
+    "eslint-loader": "2.1.2"
   }
 }

@@ -15,10 +15,10 @@ import mergeWith from 'lodash/mergeWith';
 
 const Colors = require('./colors.js');
 
-const Oval;
-const Rectangle;
-const Path;
-const Color;
+let Oval;
+let Rectangle;
+let Path;
+let Color;
 
 class Primitives{
     constructor(ctx, _drawStyle, _fontStyle){
