@@ -90,43 +90,43 @@ export default {
 				'alpha': 0, 
 				'link': 'https://github.com/phreakradio/Router_simulator'
 	        },
-	        java1:{ 		
+	        java1:{
 	   			'label': 'L.E.T.T.E.R',
 				'color': this.color.brown, 
 				'alpha': 0,
 				'link': 'https://github.com/phreakradio/LETTER'
 	        }, 
-	        java2:{ 
+	        java2:{
 	   			'label': 'Game of Life',
 				'color': this.color.brown, 
 				'alpha': 0,
 				'link': 'https://github.com/phreakradio/Conways-Game-Of-Life'
 	        }, 					
-	        java3:{ 
+	        java3:{
 	   			'label': 'MazeSolver',
 				'color': this.color.brown, 
 				'alpha': 0,
 				'link': 'https://github.com/phreakradio/MazeSolver'
 	        },
-	        java4:{ 		
+	        java4:{
 	   			'label': 'Towers of Hanoi',
 				'color': this.color.brown, 
 				'alpha': 0,
 				'link': 'https://github.com/phreakradio/Towers-of-Hanoi'
 	        }, 					
-	        java5:{ 
+	        java5:{
 	   			'label': 'DFA Verifier',
 				'color': this.color.brown, 
 				'alpha': 0,
 				'link': 'https://github.com/phreakradio/DFA-Verifier'
 	        },
-	        java6:{ 
+	        java6:{
 	   			'label': 'PDA Verifier',
 				'color': this.color.brown, 
 				'alpha': 0,
 				'link': 'https://github.com/phreakradio/PDA-Verfier'
 	        },
-	        java7:{ 
+	        java7:{
 	   			'label': 'DES Encryptor/Decryptor',
 				'color': this.color.brown, 
 				'alpha': 0,

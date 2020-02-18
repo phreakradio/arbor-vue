@@ -6,7 +6,8 @@
     "serve": "vue-cli-service serve",
     "build": "vue-cli-service build",
     "build-bundle": "vue-cli-service build --target lib --name arbor-vue ./src/components/index.js",
-    "lint": "vue-cli-service lint"
+    "lint": "vue-cli-service lint",
+    "test": "mocha"
   },
   "main": "./dist/arbor-vue.common.js",
   "dependencies": {
@@ -21,6 +22,7 @@
     "babel-eslint": "^10.0.3",
     "eslint": "^5.16.0",
     "eslint-plugin-vue": "^5.0.0",
+    "mocha": "^7.0.1",
     "vue-template-compiler": "^2.6.10"
   }
 }
