@@ -1,9 +1,9 @@
 <template>
-	<canvas id="arborViewport"></canvas>
+	<canvas id="arborViewport" ref="arborViewport"></canvas>
 </template>
 
 <script>
-import Renderer from "../services/renderer";
+import Renderer from"../services/renderer";
 import ParticleSystem from "../services/physics/system";
 
 export default {
@@ -13,7 +13,6 @@ export default {
 		sys : function(){
 			let tmp = new ParticleSystem();
 			tmp.parameters(this.systemParms);
-			tmp.renderer = new Renderer("#arborViewport");
 			tmp.graft(this.particleParms);
 			return tmp;
 		}
@@ -21,7 +20,9 @@ export default {
 	created(){
 	},
 	mounted(){
-		
+		this.sys.renderer = new Renderer(this.$refs.arborViewport);
+		// this.sys.renderer = new Renderer("#arborViewport");
+		this.sys.init();
 	}
 }
 </script>

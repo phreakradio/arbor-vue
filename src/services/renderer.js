@@ -1,16 +1,16 @@
 'use strict';
 
-const Graphics = require("./graphics/graphics");
-const Point = require("./physics/atoms.js");
+import Colors from "./graphics/colors";
+import Graphics from "./graphics/graphics";
+import Point from "./physics/atoms";
 
 import has from 'lodash/has';
-import map from 'lodash/map';
 
 class Renderer{
-	constructor(canvasId){
-		this.canvas = document.getElementById(canvasId);
+	constructor(canvas){
+		this.canvas = canvas;
 		this.ctx = this.canvas.getContext("2d");
-		this.gfx = new Graphics(canvas);
+		this.gfx = new Graphics(this.canvas);
 
 		this.particleSystem = null;
 		this.imagepath = './js/graphics/';
@@ -32,32 +32,32 @@ class Renderer{
 	}
 
 	intersect_line_box(p1, p2, boxTuple){
-	  let p3 = {x:boxTuple[0], y:boxTuple[1]},
-		  w = boxTuple[2],
-		  h = boxTuple[3];
+		let p3 = {x:boxTuple[0], y:boxTuple[1]},
+				w = boxTuple[2],
+				h = boxTuple[3];
 
-	  let tl = {x: p3.x, y: p3.y};
-	  let tr = {x: p3.x + w, y: p3.y};
-	  let bl = {x: p3.x, y: p3.y + h};
-	  let br = {x: p3.x + w, y: p3.y + h};
+		let tl = {x: p3.x, y: p3.y};
+		let tr = {x: p3.x + w, y: p3.y};
+		let bl = {x: p3.x, y: p3.y + h};
+		let br = {x: p3.x + w, y: p3.y + h};
 
-	  return this.intersect_line_line(p1, p2, tl, tr) ||
-			this.intersect_line_line(p1, p2, tr, br) ||
-			this.intersect_line_line(p1, p2, br, bl) ||
-			this.intersect_line_line(p1, p2, bl, tl) ||
-			false;
+		return this.intersect_line_line(p1, p2, tl, tr) ||
+				this.intersect_line_line(p1, p2, tr, br) ||
+				this.intersect_line_line(p1, p2, br, bl) ||
+				this.intersect_line_line(p1, p2, bl, tl) ||
+				false;
 	}
 
 	// Main output section
 	init(system){
 		this.particleSystem = system;
-		this.particleSystem.screenSize(canvas.width, canvas.height);
+		this.particleSystem.screenSize(this.canvas.width, this.canvas.height);
 		this.particleSystem.screenPadding(25, 50);
 
 		this.initMouseHandling();
 
 		// Preload all images into the node object
-		this.particleSystem.eachNode(function(node, pt) {
+		this.particleSystem.eachNode(function(node) {
 			if(node.data.image) {
 				node.data.imageob = new Image();
 				node.data.imageob.src = this.imagepath + node.data.image;
@@ -80,11 +80,11 @@ class Renderer{
 
 			// Don't draw lines that shouldn't be there
 			if (edge.source.data.alpha * edge.target.data.alpha == 0) return;
-			this.gfx.line(pt1, pt2, {stroke:colour.gray, width:1, alpha:edge.target.data.alpha});
+			this.gfx.line(pt1, pt2, {stroke:Colors.CSS.gray, width:1, alpha:edge.target.data.alpha});
 		});
 		
 		// draw the nodes
-		particleSystem.eachNode(function(node, pt){
+		this.particleSystem.eachNode(function(node, pt){
 			// node: {mass:#, p:{x,y}, name:"", data:{}}
 			// pt:   {x:#, y:#}  node position in screen coords
 
@@ -99,7 +99,7 @@ class Renderer{
 			// determine the box size and round off the coords if we'll be 
 			// drawing a text label (awful alignment jitter otherwise...)
 			let label = node.data.label||"";
-			let w = ctx.measureText(""+label).width + 10;
+			let w = this.ctx.measureText(""+label).width + 10;
 			if(w < radius) {
 				w = radius;
 			}
@@ -113,14 +113,14 @@ class Renderer{
 
 			// Set colour
 			if (node.data.color) this.ctx.fillStyle = node.data.color;
-			else ctx.fillStyle = "rgba(0,0,0,.2)";
+			else this.ctx.fillStyle = "rgba(0,0,0,.2)";
 
 			if (node.data.color=='none') this.ctx.fillStyle = "white";
 
 			// Draw the object
 			if (node.data.shape=='dot'){
 				// Check if it's a dot
-				this.gfx.oval(pt.x-w/2, pt.y-w/2, w,w, {fill:ctx.fillStyle, alpha:node.data.alpha});
+				this.gfx.oval(pt.x-w/2, pt.y-w/2, w,w, {fill:this.ctx.fillStyle, alpha:node.data.alpha});
 				nodeBoxes[node.name] = [pt.x-w/2, pt.y-w/2, w,w];
 				// Does it have an image?
 				if (imageob){
@@ -145,54 +145,53 @@ class Renderer{
 		}.bind(this));
 	}
 
-	switchMode(e){
-		if (e.mode=='hidden'){
-			dom.stop(true).fadeTo(e.dt,0, function(){
-				if (sys) sys.stop();
-				$(this).hide();
-			})
-		}
-		else if (e.mode=='visible'){
-			dom.stop(true).css('opacity',0).show().fadeTo(e.dt,1,function(){
-				this.resize();
-			})
-			if (sys) sys.start();
-		}
-	}
+	// switchMode(e){
+	// 	if (e.mode=='hidden'){
+	// 		dom.stop(true).fadeTo(e.dt,0, function(){
+	// 			if (sys) sys.stop();
+	// 			$(this).hide();
+	// 		})
+	// 	}
+	// 	else if (e.mode=='visible'){
+	// 		dom.stop(true).css('opacity',0).show().fadeTo(e.dt,1,function(){
+	// 			this.resize();
+	// 		})
+	// 		if (sys) sys.start();
+	// 	}
+	// }
 
-	switchSection(newSection){
-		let parent = this.sys.getEdgesFrom(newSection)[0].source;
-		let children = map(this.sys.getEdgesFrom(newSection), function(edge){
-			return edge.target;
-		});
+	// switchSection(newSection){
+	// 	let parent = this.sys.getEdgesFrom(newSection)[0].source;
+	// 	let children = map(this.sys.getEdgesFrom(newSection), function(edge){
+	// 		return edge.target;
+	// 	});
 		
-		this.sys.eachNode(function(node){
-			if (node.data.shape=='dot') return; // skip all but leafnodes
-			let nowVisible = (has(node, children));
-			let newAlpha = (nowVisible) ? 1 : 0;
-			let dt = (nowVisible) ? .5 : .5;
-			this.sys.tweenNode(node, dt, {alpha:newAlpha});
-			if (newAlpha==1){
-				node.p.x = parent.p.x + 3*Math.random() - .025;
-				node.p.y = parent.p.y + 3*Math.random() - .025;
-				node.tempMass = .001;
-			}
-		});
-	}
+	// 	this.sys.eachNode(function(node){
+	// 		if (node.data.shape=='dot') return; // skip all but leafnodes
+	// 		let nowVisible = (has(node, children));
+	// 		let newAlpha = (nowVisible) ? 1 : 0;
+	// 		let dt = (nowVisible) ? .5 : .5;
+	// 		this.sys.tweenNode(node, dt, {alpha:newAlpha});
+	// 		if (newAlpha==1){
+	// 			node.p.x = parent.p.x + 3*Math.random() - .025;
+	// 			node.p.y = parent.p.y + 3*Math.random() - .025;
+	// 			node.tempMass = .001;
+	// 		}
+	// 	});
+	// }
 
 	initMouseHandling(){
 		// no-nonsense drag and drop (thanks springy.js)
-		selected = null;
-		nearest = null;
+		let selected = null;
+		let nearest = null;
 		let dragged = null;
-		let oldmass = 1;
 
 		let _section = null;
 
 		let handler = {
 			moved:function(e){
 				let pos = this.canvas.offset();
-				_mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
+				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
 				nearest = this.sys.nearest(_mouseP);
 
 				if (!nearest.node) return false;
@@ -201,12 +200,12 @@ class Renderer{
 					selected = (nearest.distance < 50) ? nearest : null;
 
 					if (selected){
-						dom.addClass('linkable')
+						this.canvas.addClass('linkable')
 						// Will need to re-enable this for clickable links
 						// window.status = selected.node.data.link.replace(/^\//,"http://"+window.location.host+"/").replace(/^#/,'') 
 					}
 					else{
-						dom.removeClass('linkable')
+						this.canvas.removeClass('linkable')
 						window.status = ''
 					}
 				}
@@ -215,7 +214,7 @@ class Renderer{
 						_section = nearest.node.name;
 						this.switchSection(_section);
 					}
-					dom.removeClass('linkable'),
+					this.canvas.removeClass('linkable'),
 					window.status = ''
 				}
 				
@@ -224,18 +223,20 @@ class Renderer{
 
 			clicked:function(e){
 				var pos = this.canvas.offset();
-				_mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
+				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
 				nearest = dragged = this.sys.nearest(_mouseP);
 
 				if (nearest && selected && nearest.node===selected.node){
 					if (selected.node.data.link) {
 						let link = selected.node.data.link;
-						if (link.match(/^#/)){
-							$(that).trigger({type:"navigate", path:link.substr(1)})
-						}
-						else{
+						// TODO In case we want to navigate internally to another element
+						// Figure out considerations here
+						// if (link.match(/^#/)){
+						// 	$(that).trigger({type:"navigate", path:link.substr(1)})
+						// }
+						// else{
 							window.location = link;
-						}
+						// }
 						return false;
 					}
 				}
@@ -243,13 +244,11 @@ class Renderer{
 				if (dragged && dragged.node !== null) dragged.node.fixed = true;
 				this.canvas.unbind('mousemove', handler.moved);
 				this.canvas.bind('mousemove', handler.dragged);
-				// $(window).bind('mouseup', handler.dropped)
 
 				return false;
 			},
 
 			dragged:function(e){
-				let old_nearest = nearest && nearest.node._id;
 				let pos = this.canvas.offset();
 				var s = new Point(e.pageX-pos.left, e.pageY-pos.top);
 
@@ -262,13 +261,12 @@ class Renderer{
 				return false;
 			},
 
-			dropped:function(e){
+			dropped:function(){
 				if (dragged===null || dragged.node===undefined) return;
 				if (dragged.node !== null) dragged.node.fixed = false;
 				dragged.node.tempMass = 1000;
 				dragged = null;
 				this.canvas.unbind('mousemove', handler.dragged);
-				$(window).unbind('mouseup', handler.dropped);
 				this.canvas.bind('mousemove', handler.moved);
 				this._mouseP = null;
 				return false;
@@ -279,3 +277,5 @@ class Renderer{
 		this.canvas.mousemove(handler.moved);
 	}
 }
+
+export default Renderer;

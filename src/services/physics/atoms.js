@@ -5,96 +5,121 @@
 //
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
-
-var Node = function(data){
-    this._id = _nextNodeId++; // simple ints to allow the Kernel & ParticleSystem to chat
-	this.data = data || {};  // the user-serviceable parts
-	this._mass = (data.mass!==undefined) ? data.mass : 1;
-	this._fixed = (data.fixed===true) ? true : false;
-	this._p = new Point((typeof(data.x)=='number') ? data.x : null, 
-                     (typeof(data.y)=='number') ? data.y : null);
-    delete this.data.x;
-    delete this.data.y;
-    delete this.data.mass;
-    delete this.data.fixed;
-};
-var _nextNodeId = 1;
-
-var Edge = function(source, target, data){
-	this._id = _nextEdgeId--;
-	this.source = source;
-	this.target = target;
-	this.length = (data.length!==undefined) ? data.length : 1;
-	this.data = (data!==undefined) ? data : {};
-	delete this.data.length;
-};
-var _nextEdgeId = -1;
-
-var Particle = function(position, mass){
-    this.p = position;
-    this.m = mass;
-    this.v = new Point(0, 0); // velocity
-    this.f = new Point(0, 0); // force
-};
-Particle.prototype.applyForce = function(force){
-    this.f = this.f.add(force.divide(this.m));
-};
-
-var Spring = function(point1, point2, length, k){
-    this.point1 = point1; // a particle
-	this.point2 = point2; // another particle
-	this.length = length; // spring length at rest
-	this.k = k;           // stiffness
-};
-Spring.prototype.distanceToParticle = function(point){
-    // see http://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment/865080#865080
-    var n = this.point2.p.subtract(this.point1.p).normalize().normal();
-    var ac = point.p.subtract(this.point1.p);
-    return Math.abs(ac.x * n.x + ac.y * n.y);
-};
-
-var Point = function(x, y){
-    if (x && x.hasOwnProperty('y')){
-        y = x.y; x=x.x;
+let _nextNodeId = 1;
+class Node{
+    constructor(data){
+        this._id = _nextNodeId++; // simple ints to allow the Kernel & ParticleSystem to chat
+        this.data = data || {};  // the user-serviceable parts
+        this._mass = (data.mass!==undefined) ? data.mass : 1;
+        this._fixed = (data.fixed===true) ? true : false;
+        this._p = new Point((typeof(data.x)=='number') ? data.x : null, 
+                         (typeof(data.y)=='number') ? data.y : null);
+        delete this.data.x;
+        delete this.data.y;
+        delete this.data.mass;
+        delete this.data.fixed;
     }
-    this.x = x;
-    this.y = y;
 }
 
-Point.random = function(radius){
-    radius = (radius!==undefined) ? radius : 5;
-    return new Point(2*radius * (Math.random() - 0.5), 2*radius* (Math.random() - 0.5));
+let _nextEdgeId = -1;
+class Edge{
+    constructor(source, target, data){
+        this._id = _nextEdgeId--;
+        this.source = source;
+        this.target = target;
+        this.length = (data.length!==undefined) ? data.length : 1;
+        this.data = (data!==undefined) ? data : {};
+        delete this.data.length;
+    }
 }
 
-Point.prototype = {
-    exploded:function(){
+class Particle{
+    constructor(position, mass){
+        this.p = position;
+        this.m = mass;
+        this.v = new Point(0, 0); // velocity
+        this.f = new Point(0, 0); // force
+    }
+
+    applyForce(force){
+        this.f = this.f.add(force.divide(this.m));
+    }
+}
+
+class Spring{
+    constructor(point1, point2, length, k){
+        this.point1 = point1; // a particle
+        this.point2 = point2; // another particle
+        this.length = length; // spring length at rest
+        this.k = k;           // stiffness
+    }
+
+    distanceToParticle(point){
+        // see http://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment/865080#865080
+        let n = this.point2.p.subtract(this.point1.p).normalize().normal();
+        let ac = point.p.subtract(this.point1.p);
+        return Math.abs(ac.x * n.x + ac.y * n.y);
+    }
+}
+
+class Point{
+    constructor(x, y){
+        if (x && x.hasOwnProperty('y')){
+            y = x.y; x=x.x;
+        }
+        this.x = x;
+        this.y = y;
+    }
+
+    exploded(){
         return ( isNaN(this.x) || isNaN(this.y) );
-    },
-    add:function(v2){
-        return new Point(this.x + v2.x, this.y + v2.y);
-    },
-    subtract:function(v2){
-        return new Point(this.x - v2.x, this.y - v2.y);
-    },
-    multiply:function(n){
-        return new Point(this.x * n, this.y * n);
-    },
-    divide:function(n){
-        return new Point(this.x / n, this.y / n);
-    },
-    magnitude:function(){
+    }
+
+    add(v2){
+        this.x = this.x + v2.x;
+        this.y = this.y + v2.y;
+        return this;
+    }
+
+    subtract(v2){
+        this.x = this.x - v2.x;
+        this.y = this.y - v2.y;
+        return this;
+    }
+
+    multiply(n){
+        this.x = this.x * n;
+        this.y = this.y * n;
+        return this;
+    }
+
+    divide(n){
+        this.x = this.x / n;
+        this.y = this.y / n;
+        return this;
+    }
+
+    magnitude(){
         return Math.sqrt(this.x*this.x + this.y*this.y);
-    },
-    normal:function(){
-        return new Point(-this.y, this.x);
-    },
-    normalize:function(){
+    }
+
+    normal(){
+        let tmp = this.x;
+        this.x = -this.y;
+        this.y = tmp;
+        return this;
+    }
+
+    normalize(){
         return this.divide(this.magnitude());
     }
-}
-module.exports = Node;
-module.exports = Edge;
-module.exports = Particle;
-module.exports = Spring;
-module.exports = Point;
 
+    random(radius){
+        radius = (radius!==undefined) ? radius : 5;
+        this.x = 2*radius * (Math.random() - 0.5);
+        this.y = 2*radius* (Math.random() - 0.5);
+        return this;        
+    }
+}
+
+module.exports = {Node, Edge, Particle, Spring, Point};

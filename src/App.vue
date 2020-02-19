@@ -46,7 +46,7 @@ export default {
 					'color': color.orange,
 					'shape': 'dot',
 					'radius': 50, 
-					'image': 'python.png',
+					// 'image': 'python.png',
 					'image_w': 25,
 					'image_h': 25,
 					'alpha': 1
@@ -55,7 +55,7 @@ export default {
 					'color': color.uber,
 					'shape': 'dot',
 					'radius': 50, 
-					'image': 'c++.png',
+					// 'image': 'c++.png',
 					'image_w': 25,
 					'image_h': 25,
 					'alpha': 1
@@ -64,7 +64,7 @@ export default {
 					'color': color.brown,
 					'shape': 'dot',
 					'radius': 50, 
-					'image': 'java.png',
+					// 'image': 'java.png',
 					'image_w': 25,
 					'image_h': 25,
 					'alpha': 1
@@ -73,7 +73,7 @@ export default {
 					'color': color.green,
 					'shape': 'dot',
 					'radius': 50, 
-					'image':  'android.png',
+					// 'image':  'android.png',
 					'image_w': 25,
 					'image_h': 25,
 					'alpha': 1

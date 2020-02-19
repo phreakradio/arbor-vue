@@ -9,8 +9,8 @@ import forEach from 'lodash/forEach';
 import isEmpty from 'lodash/isEmpty';
 import map from 'lodash/map';
 
-const Easing = require('./easing');
-const Colors = require('../colors');
+import Easing from './easing';
+import Colors from '../graphics/colors';
 
 const lerpNumber = (proportion,from,to) => {
     return from + proportion*(to-from);
@@ -26,16 +26,17 @@ const lerpRGB = (proportion,from,to) => {
     return mixture;
 }
 
-class Tween {
+export default class Tween {
     constructor(){
         this._tweens = {};
         this._done = true;
     }
 
     busy(){
-        let busy = false;
-        for (let k in this._tweens){ busy=true; break; }
-        return busy;
+        return !isEmpty(this._tweens);
+        // let busy = false;
+        // for (let k in this._tweens){ busy=true; break; }
+        // return busy;
     }
 
     to(node, dur, to){
@@ -72,12 +73,12 @@ class Tween {
         }
         tween.ease = Easing[easing_fn];
 
-        if (this._tweens[node._id]===undefined) _tweens[node._id] = [];
+        if (this._tweens[node._id]===undefined) this._tweens[node._id] = [];
         this._tweens[node._id].push(tween);
         
         // look through queued prunes for any redundancies
         if (this._tweens.length>1){
-            for (let i=this._tweens.length-2; i>=0; i++){
+            for (let i=this._tweens.length-2; i>=0; i--){
                 let tw = this._tweens[i];
 
                 for (let k in tw.to){
@@ -116,13 +117,11 @@ class Tween {
     }
 
     tick(){
-        let empty = true;
-        for (let k in this._tweens){ empty=false; break; }
-        if (empty) return;
+        if(isEmpty(this._tweens)) return;
 
         let now = new Date().valueOf();
 
-        forEach(this._tweens, function(tweens){
+        forEach(this._tweens, function(tweens, id){
             let unprunedTweens = false;
 
             forEach(tweens, function(tween){
@@ -176,5 +175,3 @@ class Tween {
         return this._done;
     }    
 }
-
-module.exports = Tween;

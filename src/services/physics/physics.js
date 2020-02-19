@@ -8,16 +8,11 @@
 import forEach from 'lodash/forEach';
 import includes from 'lodash/includes';
 
-const _nearParticle = (center_pt, r) => {
-    var r = r || .0
-    var x = center_pt.x
-    var y = center_pt.y
-    var d = r*2
-    return new Point(x-r+Math.random()*d, y-r+Math.random()*d)
-}
+import BarnesHutTree from './barnes-hut.js';
+import {Point, Particle, Spring} from './atoms.js';
 
-class Physics{
-    bhTree = BarnesHutTree(); // for computing particle repulsion
+export default class Physics{
+    bhTree = new BarnesHutTree(); // for computing particle repulsion
     active = {particles:{}, springs:{}};
     free = {particles:{}};
     particles = [];
@@ -219,9 +214,9 @@ class Physics{
                     // (consult the cached `real' mass value if the mass is being poked to allow
                     // for repositioning. the poked mass will still be used in .applyforce() so
                     // all should be well)
-                    point1.applyForce(direction.multiply(that.repulsion*(point2._m||point2.m)*.5)
+                    point1.applyForce(direction.multiply(this.repulsion*(point2._m||point2.m)*.5)
                         .divide(distance * distance * 0.5) );
-                    point2.applyForce(direction.multiply(that.repulsion*(point1._m||point1.m)*.5)
+                    point2.applyForce(direction.multiply(this.repulsion*(point1._m||point1.m)*.5)
                         .divide(distance * distance * -0.5) );
                 }
             })
@@ -260,14 +255,14 @@ class Physics{
             spring.point1.applyForce(direction.multiply(spring.k * displacement * -0.5));
             spring.point2.applyForce(direction.multiply(spring.k * displacement * 0.5));
         });
-    },
+    }
 
     applyCenterDrift(){
         // find the centroid of all the particles in the system and shift everything
         // so the cloud is centered over the origin
         let numParticles = 0;
         let centroid = new Point(0,0);
-        forEach(active.particles, function(point) {
+        forEach(this.active.particles, function(point) {
             centroid.add(point.p);
             numParticles++;
         });
@@ -278,7 +273,7 @@ class Physics{
         forEach(this.active.particles, function(point) {
             point.applyForce(correction);
         })
-    },
+    }
 
     applyCenterGravity(){
         // attract each node to the origin
@@ -309,7 +304,8 @@ class Physics{
             let speed = point.v.magnitude();
             if (speed>this.SPEED_LIMIT) point.v = point.v.divide(speed*speed);
 
-            let speed = point.v.magnitude();
+            speed = point.v.magnitude();
+            
             let e = speed*speed;
             sum += e;
             max = Math.max(e,max);
@@ -350,12 +346,10 @@ class Physics{
         });
 
         this._bounds = {topleft:topleft||new Point(-1,-1), bottomright:bottomright||new Point(1,1)};
-    },
+    }
 
-    systemEnergy(timestep){
+    systemEnergy(){
         // system stats
         return this._energy;
     }
 }
-
-module.exports = Physics;

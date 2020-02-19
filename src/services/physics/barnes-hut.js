@@ -9,8 +9,9 @@
 //
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
+import Point from './atoms';
 
-class BarnesHutTree{
+export default class BarnesHutTree{
     constructor(topleft, bottomright, theta){
         this._theta = theta
 
@@ -23,7 +24,7 @@ class BarnesHutTree{
 
     insert(newParticle){
         // add a particle to the tree, starting at the current _root and working down
-        let node = this_root;
+        let node = this._root;
         let queue = [newParticle];
 
         while (queue.length){
@@ -95,7 +96,7 @@ class BarnesHutTree{
         // the specified repulsion to the particle
         let queue = [this._root];
         while (queue.length){
-            node = queue.shift();
+            let node = queue.shift();
             if (node===undefined) continue;
             if (particle===node) continue;
 
@@ -112,7 +113,7 @@ class BarnesHutTree{
                 // with its quadrants in turn
                 let dist = particle.p.subtract(node.p.divide(node.mass)).magnitude();
                 let size = Math.sqrt(node.size.x * node.size.y);
-                if (size/dist > _theta){ // i.e., s/d > Θ
+                if (size/dist > this._theta){ // i.e., s/d > Θ
                     // open the quad and recurse
                     queue.push(node.ne)
                     queue.push(node.nw)
@@ -147,8 +148,9 @@ class BarnesHutTree{
 
     _newBranch(){
         // to prevent a gc horrorshow, recycle the tree nodes between iterations
+        let branch;
         if (this._branches[this._branchCtr]){
-            let branch = this._branches[this._branchCtr];
+            branch = this._branches[this._branchCtr];
             branch.ne = branch.nw = branch.se = branch.sw = undefined;
             branch.mass = 0;
             delete branch.p;
@@ -162,6 +164,3 @@ class BarnesHutTree{
         return branch;
     }
 }
-
-module.exports = BarnesHutTree;
-

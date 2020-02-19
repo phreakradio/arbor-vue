@@ -6,10 +6,9 @@
 //
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
-importScripts('atoms.js');
-importScripts('barnes-hut.js');  
-
-const Physics = require('./physics');
+import * from 'atoms.js';
+import BarnesHutTree from 'barnes-hut.js';
+import Physics from './physics';
 
 class PhysicsWorker{
     _timeout = 20;
@@ -20,7 +19,7 @@ class PhysicsWorker{
     times = [];
     last = new Date().valueOf();
 
-    constructor(param){
+    init(param){
         this.timeout(param.timeout);
         this._physics = new Physics(param.dt, param.stiffness, param.repulsion, param.friction, this.tock);
     }
@@ -37,7 +36,6 @@ class PhysicsWorker{
     go(){
         if (this._physicsInterval!==null) return;
 
-        // postMessage('starting')
         this._lastTick=null;
         this._physicsInterval = setInterval(this.tick, this._timeout);
     }
@@ -46,7 +44,6 @@ class PhysicsWorker{
         if (this._physicsInterval===null) return;
         clearInterval(this._physicsInterval);
         this._physicsInterval = null;
-        // postMessage('stopping')
     }
 
     tick(){
@@ -60,10 +57,8 @@ class PhysicsWorker{
             if (new Date().valueOf()-this._lastTick>1000){
                 this.stop();
             }
-            else{
-                // postMessage('pausing')
-            }
-        }else{
+        }
+        else{
             this._lastTick = null;
         }
     }
@@ -85,11 +80,9 @@ class PhysicsWorker{
     update(changes){
         let epoch = this._physics._update(changes);
     }
-
 }
 
-
-var physics = PhysicsWorker()
+var physics = new PhysicsWorker();
 
 onmessage = function(e){
   if (!e.data.type){

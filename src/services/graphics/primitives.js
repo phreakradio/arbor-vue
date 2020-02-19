@@ -11,14 +11,14 @@ import assign from 'lodash/assign';
 import forEach from 'lodash/forEach';
 import has from 'lodash/has';
 import isArray from 'lodash/isArray';
-import mergeWith from 'lodash/mergeWith';
+import mergeWith from'lodash/mergeWith';
 
 const Colors = require('./colors.js');
 
-let Oval;
-let Rectangle;
-let Path;
-let Color;
+// let Oval;
+// let Rectangle;
+// let Path;
+// let Color;
 
 class Primitives{
     constructor(ctx, _drawStyle, _fontStyle){
@@ -146,6 +146,7 @@ class Primitives{
 
     Path = class Path extends this{
         constructor(x1, y1, x2, y2, style){
+            super();
             // calling patterns:
             // ƒ( x1, y1, x2, y2, <style> )
             // ƒ( {x:1, y:1}, {x:2, y:2}, <style> )
@@ -181,7 +182,7 @@ class Primitives{
             let tmp = this.ctx;
             forEach(sublines, function(lineseg){
                 tmp.moveTo(lineseg[0].x+.5, lineseg[0].y+.5);
-                forEach(lineseg, function(pt){
+                forEach(lineseg, function(pt, i){
                     if (i==0) return;
                     tmp.lineTo(pt.x+.5, pt.y+.5);
                 });
@@ -208,6 +209,7 @@ class Primitives{
 
     Color = class Color extends this{
         constructor(a,b,c,d){
+            super();
             let rgba = Colors.decode(a,b,c,d);
             if (rgba){
                 this.r = rgba.r;
@@ -222,4 +224,4 @@ class Primitives{
     }
 }
 
-module.exports = Primitives;
+export default Primitives;

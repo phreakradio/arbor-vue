@@ -11,10 +11,9 @@ import forEach from 'lodash/forEach';
 import isEmpty from 'lodash/isEmpty';
 import mergeWith from 'lodash/mergeWith';
 
-import Colors from './colors.js';
-import Primitives from './primitives.js';
+import Colors from './colors';
+import Primitives from './primitives';
 
-/*eslint no-useless-escape: "error"*/
 const nano = (template, data) => {
     return template.replace(/\{([\w\-.]*)}/g, function(str, key){
         var keys = key.split("."), value = data[keys.shift()];
@@ -28,7 +27,7 @@ const nano = (template, data) => {
 
 class Graphics{
     constructor(canvas){
-        this.dom = document.getElementById(canvas);
+        this.dom = canvas;
         this.ctx = this.dom.getContext('2d');
 
         this._bounds = null;
@@ -323,4 +322,4 @@ class Graphics{
     }    
 }
 
-module.exports = Graphics;
+export default Graphics;

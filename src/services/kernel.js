@@ -4,7 +4,9 @@
 // run-loop manager for physics and tween updates
 //
 
-import Tween from './tween/tween.js';
+import Tween from './tween/tween';
+import Physics from './physics/physics';
+import mergeWith from 'lodash/mergeWith';
 
 export default class Kernel{
     constructor(pSystem){
@@ -24,52 +26,32 @@ export default class Kernel{
 
 
         this.system = pSystem;
-        this.tween = null;
         this.nodes = {};
 
-        this._lastPositions:null;
+        this._lastPositions=null;
         // 
         // the main render loop when running in web worker mode
         this._lastFrametime = new Date().valueOf();
         this._lastBounds = null;
         this._currentRenderer = null;
-    }
 
-    init(){
-        if (typeof(Tween)!='undefined') 
-            this._tween = Tween();
-        else if (typeof(arbor.Tween)!='undefined') 
-            this._tween = arbor.Tween();
-        else 
-            this._tween = {
-                busy:function(){return false},
-                tick:function(){return true},
-                to:function(){ 
-                    trace('Please include arbor-tween.js to enable tweens'); 
-                    _tween.to=function(){}; 
-                    return;
-                }
-            }
-        this.tween = this._tween;
-        var params = this.system.parameters();
+        this._tween = new Tween();
+        let params = this.system.parameters();
 
         if(this.USE_WORKER){
-            trace('arbor.js/web-workers',params);
-            this._screenInterval = setInterval(this.screenUpdate, params.timeout);
+            this._screenInterval = setInterval(this.screenUpdate.bind(this), params.timeout);
 
-            this._physics = new Worker(arbor_path()+'physics/worker.js');
-            this._physics.onmessage = that.workerMsg;
-            this._physics.onerror = function(e){ trace('physics:',e) };
+            this._physics = new Worker('./physics/worker.js');
+            this._physics.onmessage = this.workerMsg;
             this._physics.postMessage({
                 type:"physics", 
-                physics:objmerge(params, {timeout:Math.ceil(params.timeout)})
+                physics:mergeWith(params, {timeout:Math.ceil(params.timeout)})
             });
         }
         else{
-            trace('arbor.js/single-threaded',params)
-            this._physics = Physics(params.dt, params.stiffness, params.repulsion, params.friction, that.system._updateGeometry, params.integrator);
-
+            this._physics = new Physics(params.dt, params.stiffness, params.repulsion, params.friction, this.system._updateGeometry, params.integrator);
             this.start();
+        }
     }
 
     // updates from the ParticleSystem
@@ -94,7 +76,7 @@ export default class Kernel{
         if (!isNaN(param.timeout)){
             if (this.USE_WORKER){
                 clearInterval(this._screenInterval);
-                this._screenInterval = setInterval(this..screenUpdate, param.timeout);
+                this._screenInterval = setInterval(this.screenUpdate.bind(this), param.timeout);
             }
             else{
                 // clear the old interval then let the call to .start set the new one
@@ -114,9 +96,6 @@ export default class Kernel{
         if (type=='geometry'){
             this.workerUpdate(e.data);
         }
-        else{
-            trace('physics:',e.data);
-        }
     }
 
     workerUpdate(data){
@@ -125,9 +104,7 @@ export default class Kernel{
     }
 
     screenUpdate(){
-        var now = new Date().valueOf();
-
-        var shouldRedraw = false;
+        let shouldRedraw = false;
         if (this._lastPositions!==null){
             this.system._updateGeometry(this._lastPositions);
             this._lastPositions = null;
@@ -139,7 +116,7 @@ export default class Kernel{
         if (this.system._updateBounds(this._lastBounds)) shouldRedraw=true;
 
         if (shouldRedraw){
-            var render = this.system.renderer;
+            let render = this.system.renderer;
             if (render!==undefined){
                 if (render !== this._attached){
                     render.init(this.system);
@@ -163,12 +140,10 @@ export default class Kernel{
         if (this._tween) this._tween.tick();
         this._physics.tick();
 
-        var stillActive = this.system._updateBounds();
-        if (this._tween && this._tween.busy()) stillActive = true;
+        this.system._updateBounds();
 
-        var render = this.system.renderer;
-        var now = new Date();
-        var render = this.system.renderer;
+        let render = this.system.renderer;
+        let now = new Date();
         if (render!==undefined){
             if (render !== this._attached){
                 render.init(this.system);
@@ -177,33 +152,28 @@ export default class Kernel{
             render.redraw({timestamp:now});
         }
 
-        var prevFrame = this._fpsWindow.last;
+        let prevFrame = this._fpsWindow.last;
         this._fpsWindow.last = now;
         this._fpsWindow.push(this._fpsWindow.last-prevFrame);
         if (this._fpsWindow.length>50) this._fpsWindow.shift();
 
         // but stop the simulation when energy of the system goes below a threshold
-        var sysEnergy = this._physics.systemEnergy();
+        let sysEnergy = this._physics.systemEnergy();
         if ((sysEnergy.mean + sysEnergy.max)/2 < 0.05){
             if (this._lastTick===null) this._lastTick=new Date().valueOf();
             if (new Date().valueOf()-this._lastTick>1000){
-                // trace('stopping')
                 clearInterval(this._tickInterval)
                 this._tickInterval = null;
             }
-            else{
-                // trace('pausing')
-            }
         }
         else{
-            // trace('continuing')
             this._lastTick = null;
         }
     }
 
     fps(newTargetFPS){
         if (newTargetFPS!==undefined){
-            var timeout = 1000/Math.max(1,targetFps);
+            var timeout = 1000/Math.max(1,this.system.targetFps);
             this.physicsModified({timeout:timeout});
         }
         

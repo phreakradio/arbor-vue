@@ -6,12 +6,18 @@
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
 
-import cloneDeep from 'lodash/cloneDeep';
 import forEach from 'lodash/forEach';
 import isArray from 'lodash/isArray';
 import isEmpty from 'lodash/isEmpty';
+import cloneDeep from 'lodash/cloneDeep';
+import assignIn from 'lodash/assignIn';
 
-class ParticleSystem{
+const Edge = require("./atoms").Edge;
+const Point = require("./atoms").Point;
+
+import Kernel from "../kernel.js";
+
+export default class ParticleSystem{
     constructor(repulsion, stiffness, friction, centerGravity, targetFps, dt, precision, integrator){
         this._changes=[];
         this._notification=null;
@@ -67,6 +73,9 @@ class ParticleSystem{
             names:{}, // lookup table based on 'name' field in data objects
             kernel: null
         };
+
+        this.state.kernel = new Kernel(this);
+        this.state.tween = this.state.kernel.tween || null;
     }
 
     parameters(newParams){
@@ -74,7 +83,7 @@ class ParticleSystem{
             if (!isNaN(newParams.precision)){
                 newParams.precision = Math.max(0, Math.min(1, newParams.precision))
             }
-            forEach(this._parameters, function(p, v){
+            forEach(this._parameters, function(p){
                 if (newParams[p]!==undefined) this._parameters[p] = newParams[p];
             })
             this.state.kernel.physicsModified(newParams);
@@ -133,7 +142,7 @@ class ParticleSystem{
             delete this.state.names[node.name];
         }
 
-        forEach(state.edges, function(e){
+        forEach(this.state.edges, function(e){
             if (e.source._id === node._id || e.target._id === node._id){
                 this.pruneEdge(e);
             }
@@ -155,7 +164,7 @@ class ParticleSystem{
 
     eachNode(callback){
         // callback should accept two arguments: Node, Point
-        forEach(state.nodes, function(n){
+        forEach(this.state.nodes, function(n){
             if (n._p.x==null || n._p.y==null) return;
             let pt = (this._screenSize!==null) ? this.toScreen(n._p) : n._p;
             callback.call(this, n, pt);
@@ -177,7 +186,7 @@ class ParticleSystem{
         if (exists){
             // probably shouldn't allow multiple edges in same direction
             // between same nodes? for now just overwriting the data...
-            $.extend(this.state.adjacency[src][dst].data, edge.data)
+            assignIn(this.state.adjacency[src][dst].data, edge.data);
             return;
         }
         else{
@@ -201,8 +210,8 @@ class ParticleSystem{
                 let edges = this.state.adjacency[x][y];
 
                 for (var j=edges.length - 1; j>=0; j--)  {
-                    if (state.adjacency[x][y][j]._id === edge._id){
-                        state.adjacency[x][y].splice(j, 1);
+                    if (this.state.adjacency[x][y][j]._id === edge._id){
+                        this.state.adjacency[x][y].splice(j, 1);
                     }
                 }
             }
@@ -245,7 +254,7 @@ class ParticleSystem{
         if (!node) return [];
 
         let nodeEdges = [];
-        forEach(state.edges, function(edge){
+        forEach(this.state.edges, function(edge){
             if (edge.target == node) nodeEdges.push(edge);
         });
         
@@ -254,7 +263,7 @@ class ParticleSystem{
 
     eachEdge(callback){
         // callback should accept two arguments: Edge, Point
-        forEach(state.edges, function(e){
+        forEach(this.state.edges, function(e){
             let p1 = this.state.nodes[e.source._id]._p;
             let p2 = this.state.nodes[e.target._id]._p;
 
@@ -273,7 +282,7 @@ class ParticleSystem{
         let changes = {dropped:{nodes:[], edges:[]}};
 
         if (callback===undefined){
-            forEach(state.nodes, function(node){
+            forEach(this.state.nodes, function(node){
                 this.changes.dropped.nodes.push(node);
                 this.pruneNode(node);
             });
@@ -340,7 +349,7 @@ class ParticleSystem{
     merge(branch){
         let changes = {added:{nodes:[], edges:[]}, dropped:{nodes:[], edges:[]}};
 
-        forEach(state.edges, function(edge){
+        forEach(this.state.edges, function(edge){
             // if ((branch.edges[edge.source.name]===undefined || branch.edges[edge.source.name][edge.target.name]===undefined) &&
             //     (branch.edges[edge.target.name]===undefined || branch.edges[edge.target.name][edge.source.name]===undefined)){
             if ((branch.edges[edge.source.name]===undefined || branch.edges[edge.source.name][edge.target.name]===undefined)){
@@ -349,7 +358,7 @@ class ParticleSystem{
             }
         }.bind(this));
         
-        let prune_changes = this.prune(function(node, edges){
+        let prune_changes = this.prune(function(node){
             if (branch.nodes[node.name] === undefined){
                 this.changes.dropped.nodes.push(node);
                 return true;
@@ -408,9 +417,9 @@ class ParticleSystem{
 
     // convert to/from screen coordinates
     screen(opts){
-        if (opts == undefined) return {size:(this._screenSize)? objcopy(_screenSize) : undefined, 
-                                       padding:_screenPadding.concat(), 
-                                       step:_screenStep};
+        if (opts == undefined) return {size:(this._screenSize)? cloneDeep(this._screenSize) : undefined, 
+                                       padding:this._screenPadding.concat(), 
+                                       step:this._screenStep};
         if (opts.size!==undefined) this.screenSize(opts.size.width, opts.size.height);
         if (!isNaN(opts.step)) this.screenStep(opts.step);
         if (opts.padding!==undefined) this.screenPadding(opts.padding);
@@ -422,8 +431,7 @@ class ParticleSystem{
     }
 
     screenPadding(t,r,b,l){
-        if (isArray(t)) trbl = t;
-        else trbl = [t,r,b,l];
+        let trbl = (isArray(t)) ? t : [t,r,b,l];
 
         let top = trbl[0];
         let right = trbl[1];
@@ -489,14 +497,14 @@ class ParticleSystem{
         this._boundsTarget.bottomright = center.add(size.divide(2));
 
         if (!this._bounds){
-            if (isEmpty(state.nodes)) return false;
-            this._bounds = _boundsTarget;
+            if (isEmpty(this.state.nodes)) return false;
+            this._bounds = this._boundsTarget;
             return true;
         }
 
         // var stepSize = (Math.max(dims.x,dims.y)<MINSIZE) ? .2 : _screenStep
         var stepSize = this._screenStep;
-        _newBounds = {
+        let _newBounds = {
             bottomright: this._bounds.bottomright.add( this._boundsTarget.bottomright.subtract(this._bounds.bottomright).multiply(stepSize) ),
             topleft: this._bounds.topleft.add( this._boundsTarget.topleft.subtract(this._bounds.topleft).multiply(stepSize) )
         };
@@ -524,7 +532,7 @@ class ParticleSystem{
         let topleft = null;
 
         // find the true x/y range of the nodes
-        forEach(state.nodes, function(node){
+        forEach(this.state.nodes, function(node){
             if (!bottomright){
                 bottomright = new Point(node._p);
                 topleft = new Point(node._p);
@@ -554,9 +562,8 @@ class ParticleSystem{
         // units and convert it back to the particle system coordinates
 
         let min = {node: null, point: null, distance: null};
-        var t = that;
         
-        forEach(state.nodes, function(node){
+        forEach(this.state.nodes, function(node){
             let pt = node._p;
             if (pt.x===null || pt.y===null) return;
             let distance = pt.subtract(pos).magnitude();
@@ -591,12 +598,7 @@ class ParticleSystem{
             this._notification = null;
         }
     }
-
-
 }
-    
-  //   state.kernel = Kernel(that)
-  //   state.tween = state.kernel.tween || null
     
   //   // some magic attrs to make the Node objects phone-home their physics-relevant changes
   //   Node.prototype.__defineGetter__("p", function() { 
