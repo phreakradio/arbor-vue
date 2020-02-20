@@ -12,12 +12,11 @@ import isEmpty from 'lodash/isEmpty';
 import cloneDeep from 'lodash/cloneDeep';
 import assignIn from 'lodash/assignIn';
 
-const Edge = require("./atoms").Edge;
-const Point = require("./atoms").Point;
+import {Edge, Point, Node} from "./atoms";
 
 import Kernel from "../kernel.js";
 
-export default class ParticleSystem{
+class ParticleSystem{
     constructor(repulsion, stiffness, friction, centerGravity, targetFps, dt, precision, integrator){
         this._changes=[];
         this._notification=null;
@@ -312,7 +311,7 @@ export default class ParticleSystem{
                 // if (oldNode) $.extend(oldNode.data, nodeData)
 
                 if (oldNode) oldNode.data = nodeData;
-                else this.changes.added.nodes.push( this.addNode(name, nodeData) );
+                else changes.added.nodes.push( this.addNode(name, nodeData) );
 
                 this.state.kernel.start();
             }.bind(this));
@@ -321,7 +320,7 @@ export default class ParticleSystem{
         if (branch.edges) {
             forEach(branch.edges, function(dsts, src){
                 let srcNode = this.getNode(src);
-                if (!srcNode) this.changes.added.nodes.push( this.addNode(src, {}) );
+                if (!srcNode) changes.added.nodes.push( this.addNode(src, {}) );
 
                 forEach(dsts, function(edgeData, dst){
                     // should probably merge any x/y/m data as well...
@@ -330,14 +329,14 @@ export default class ParticleSystem{
                     // i wonder if it should spawn any non-existant nodes that are part
                     // of one of these edge requests...
                     let dstNode = this.getNode(dst);
-                    if (!dstNode) this.changes.added.nodes.push( this.addNode(dst, {}) );
+                    if (!dstNode) changes.added.nodes.push( this.addNode(dst, {}) );
 
                     let oldEdges = this.getEdges(src, dst);
                     if (oldEdges.length>0){
                         oldEdges[0].data = edgeData;
                     }
                     else{
-                        this.changes.added.edges.push( this.addEdge(src, dst, edgeData) );
+                        changes.added.edges.push( this.addEdge(src, dst, edgeData) );
                     }
                 }.bind(this));
             }.bind(this));
@@ -588,7 +587,7 @@ export default class ParticleSystem{
         if (this._notification===null) this._epoch++;
         else clearTimeout(this._notification);
         
-        this._notification = setTimeout(this._synchronize,20);
+        this._notification = setTimeout(this._synchronize.bind(this),20);
     }
 
     _synchronize(){
@@ -599,6 +598,7 @@ export default class ParticleSystem{
         }
     }
 }
+export default ParticleSystem;
     
   //   // some magic attrs to make the Node objects phone-home their physics-relevant changes
   //   Node.prototype.__defineGetter__("p", function() { 

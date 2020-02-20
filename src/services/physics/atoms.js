@@ -122,4 +122,4 @@ class Point{
     }
 }
 
-module.exports = {Node, Edge, Particle, Spring, Point};
+export {Node, Edge, Particle, Spring, Point};

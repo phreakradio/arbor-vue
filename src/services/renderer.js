@@ -2,9 +2,10 @@
 
 import Colors from "./graphics/colors";
 import Graphics from "./graphics/graphics";
-import Point from "./physics/atoms";
+import {Point} from "./physics/atoms";
 
 import has from 'lodash/has';
+import map from 'lodash/map';
 
 class Renderer{
 	constructor(canvas){
@@ -145,40 +146,42 @@ class Renderer{
 		}.bind(this));
 	}
 
-	// switchMode(e){
-	// 	if (e.mode=='hidden'){
-	// 		dom.stop(true).fadeTo(e.dt,0, function(){
-	// 			if (sys) sys.stop();
-	// 			$(this).hide();
-	// 		})
-	// 	}
-	// 	else if (e.mode=='visible'){
-	// 		dom.stop(true).css('opacity',0).show().fadeTo(e.dt,1,function(){
-	// 			this.resize();
-	// 		})
-	// 		if (sys) sys.start();
-	// 	}
-	// }
+	// Switch for showing/hiding canvas and start/stopping system respectively
+	switchMode(e){
+		if (e=='hidden'){
+			this.canvas.stop(true).fadeTo(e.dt,0, function(){
+				if (this.particleSystem) this.particleSystem.stop();
+				this.canvas.hide();
+			})
+		}
+		else if (e=='visible'){
+			this.canvas.stop(true).css('opacity',0).show().fadeTo(e.dt,1,function(){
+				this.resize();
+			})
+			if (this.particleSystem) this.particleSystem.start();
+		}
+	}
 
-	// switchSection(newSection){
-	// 	let parent = this.sys.getEdgesFrom(newSection)[0].source;
-	// 	let children = map(this.sys.getEdgesFrom(newSection), function(edge){
-	// 		return edge.target;
-	// 	});
+	// Allows node 'highlighting' so leaf node can appear on hover of parent
+	switchSection(newSection){
+		let parent = this.particleSystem.getEdgesFrom(newSection)[0].source;
+		let children = map(this.particleSystem.getEdgesFrom(newSection), function(edge){
+			return edge.target;
+		});
 		
-	// 	this.sys.eachNode(function(node){
-	// 		if (node.data.shape=='dot') return; // skip all but leafnodes
-	// 		let nowVisible = (has(node, children));
-	// 		let newAlpha = (nowVisible) ? 1 : 0;
-	// 		let dt = (nowVisible) ? .5 : .5;
-	// 		this.sys.tweenNode(node, dt, {alpha:newAlpha});
-	// 		if (newAlpha==1){
-	// 			node.p.x = parent.p.x + 3*Math.random() - .025;
-	// 			node.p.y = parent.p.y + 3*Math.random() - .025;
-	// 			node.tempMass = .001;
-	// 		}
-	// 	});
-	// }
+		this.particleSystem.eachNode(function(node){
+			if (node.data.shape=='dot') return; // skip all but leafnodes
+			let nowVisible = (has(node, children));
+			let newAlpha = (nowVisible) ? 1 : 0;
+			let dt = (nowVisible) ? .5 : .5;
+			this.particleSystem.tweenNode(node, dt, {alpha:newAlpha});
+			if (newAlpha==1){
+				node.p.x = parent.p.x + 3*Math.random() - .025;
+				node.p.y = parent.p.y + 3*Math.random() - .025;
+				node.tempMass = .001;
+			}
+		});
+	}
 
 	initMouseHandling(){
 		// no-nonsense drag and drop (thanks springy.js)
@@ -190,9 +193,12 @@ class Renderer{
 
 		let handler = {
 			moved:function(e){
-				let pos = this.canvas.offset();
+				let pos = {
+					left : this.canvas.offsetLeft,
+					top : this.canvas.offsetTop
+				}
 				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
-				nearest = this.sys.nearest(_mouseP);
+				nearest = this.particleSystem.nearest(_mouseP);
 
 				if (!nearest.node) return false;
 
@@ -200,13 +206,13 @@ class Renderer{
 					selected = (nearest.distance < 50) ? nearest : null;
 
 					if (selected){
-						this.canvas.addClass('linkable')
+						this.canvas.addClass('linkable');
 						// Will need to re-enable this for clickable links
 						// window.status = selected.node.data.link.replace(/^\//,"http://"+window.location.host+"/").replace(/^#/,'') 
 					}
 					else{
-						this.canvas.removeClass('linkable')
-						window.status = ''
+						this.canvas.removeClass('linkable');
+						window.status = '';
 					}
 				}
 				else if (has(nearest.node.name, ['python', 'java','android','web','cplus'])){
@@ -214,17 +220,17 @@ class Renderer{
 						_section = nearest.node.name;
 						this.switchSection(_section);
 					}
-					this.canvas.removeClass('linkable'),
+					this.canvas.removeClass('linkable');
 					window.status = ''
 				}
 				
-				return false
+				return false;
 			},
 
 			clicked:function(e){
 				var pos = this.canvas.offset();
 				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
-				nearest = dragged = this.sys.nearest(_mouseP);
+				nearest = dragged = this.particleSystem.nearest(_mouseP);
 
 				if (nearest && selected && nearest.node===selected.node){
 					if (selected.node.data.link) {
@@ -254,7 +260,7 @@ class Renderer{
 
 				if (!nearest) return;
 				if (dragged !== null && dragged.node !== null){
-					let p = this.sys.fromScreen(s);
+					let p = this.particleSystem.fromScreen(s);
 					dragged.node.p = p;
 				}
 
@@ -273,8 +279,8 @@ class Renderer{
 			}
 		}
 
-		this.canvas.mousedown(handler.clicked);
-		this.canvas.mousemove(handler.moved);
+		this.canvas.addEventListener('mousedown', handler.clicked.bind(this));
+		this.canvas.addEventListener('mousemove', handler.moved.bind(this));
 	}
 }
 

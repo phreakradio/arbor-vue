@@ -10,7 +10,11 @@ import mergeWith from 'lodash/mergeWith';
 
 export default class Kernel{
     constructor(pSystem){
-        this.chrome_local_file = window.location.protocol == "file:" && navigator.userAgent.toLowerCase().indexOf('chrome') > -1;
+        // let test1 = window.location.protocol == "file:";
+        // let test2 = navigator.userAgent.toLowerCase().indexOf('chrome') > -1;
+
+        // this.chrome_local_file = test1 && test2;
+        this.chrome_local_file = true;
         this.USE_WORKER = (window.Worker !== undefined && !this.chrome_local_file);
 
         this._physics = null;
@@ -198,7 +202,7 @@ export default class Kernel{
         }
         else{
           this._lastTick = null;
-          this._tickInterval = setInterval(this.physicsUpdate, this.system.parameters().timeout);
+          this._tickInterval = setInterval(this.physicsUpdate.bind(this), this.system.parameters().timeout);
         }
     }
 

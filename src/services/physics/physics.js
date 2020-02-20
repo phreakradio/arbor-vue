@@ -8,11 +8,11 @@
 import forEach from 'lodash/forEach';
 import includes from 'lodash/includes';
 
-import BarnesHutTree from './barnes-hut.js';
-import {Point, Particle, Spring} from './atoms.js';
+import BarnesHutTree from './barnes-hut';
+import { Particle, Spring, Point } from './atoms';
 
-export default class Physics{
-    bhTree = new BarnesHutTree(); // for computing particle repulsion
+class Physics{
+    bhTree = null; // for computing particle repulsion
     active = {particles:{}, springs:{}};
     free = {particles:{}};
     particles = [];
@@ -131,7 +131,7 @@ export default class Physics{
 
         forEach(changes, function(c){
             if (c.t in this) this[c.t](c);
-        })
+        }.bind(this));
         return this._epoch;
     }
 
@@ -232,15 +232,15 @@ export default class Physics{
         this.bhTree = new BarnesHutTree(topleft, bottomright, this.theta);
         forEach(this.active.particles, function(particle){
             this.bhTree.insert(particle);
-        });
+        }.bind(this));
 
         // ...and use it to approximate the repulsion forces
         forEach(this.active.particles, function(particle){
             this.bhTree.applyForces(particle, this.repulsion);
-        });
+        }.bind(this));
     }
 
-    applySpring(){
+    applySprings(){
         forEach(this.active.springs, function(spring){
             let d = spring.point2.p.subtract(spring.point1.p); // the direction of the spring
             let displacement = spring.length - d.magnitude(); //Math.max(.1, d.magnitude());
@@ -353,3 +353,5 @@ export default class Physics{
         return this._energy;
     }
 }
+
+export default Physics;

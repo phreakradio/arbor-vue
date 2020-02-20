@@ -75,8 +75,8 @@ class Graphics{
     clear(x,y,w,h){
         if(arguments.length<4){
             x=0; y=0;
-            w=this.dom.attr('width');
-            h=this.dom.attr('height');
+            w=this.dom.width;
+            h=this.dom.height;
         }
 
         this.ctx.clearRect(x,y,w,h);

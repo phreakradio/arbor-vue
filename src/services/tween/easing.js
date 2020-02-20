@@ -36,7 +36,7 @@
  *
  */
  
-export const Easing = {
+const Easing = {
     // t: current time, b: beginning value, c: change in value, d: duration
     linear: function(t, b, c, d){
         return c*(t/d) + b;
@@ -166,3 +166,5 @@ export const Easing = {
         return Easing.bounceOut(t*2-d, 0, c, d) * .5 + c*.5 + b;
     }
 }
+
+export default Easing;

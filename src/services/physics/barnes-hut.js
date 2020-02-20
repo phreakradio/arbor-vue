@@ -9,11 +9,17 @@
 //
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
-import Point from './atoms';
+import { Point } from './atoms';
 
 export default class BarnesHutTree{
+    _branches = [];
+    _branchCtr = 0;
+    _root = null;
+    _theta = .5;
+    
     constructor(topleft, bottomright, theta){
         this._theta = theta
+
 
         // create a fresh root node for these spatial bounds
         this._branchCtr = 0;

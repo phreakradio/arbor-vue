@@ -13,7 +13,7 @@ import has from 'lodash/has';
 import isArray from 'lodash/isArray';
 import mergeWith from'lodash/mergeWith';
 
-const Colors = require('./colors.js');
+import Colors from './colors';
 
 // let Oval;
 // let Rectangle;
@@ -27,7 +27,7 @@ class Primitives{
         this._fontStyle = _fontStyle;
     }
 
-    Oval = class Oval extends this{
+    Oval = class Oval extends Primitives{
         constructor(x,y,w,h,style){
             super();
             this.x = x;
@@ -82,7 +82,7 @@ class Primitives{
         }
     }
 
-    Rectangle = class Rectangle extends this{
+    Rectangle = class Rectangle extends Primitives{
         constructor(x,y,w,h,r,style){
             super();
             if (has(r, ['stroke', 'fill', 'width'])){
@@ -144,7 +144,7 @@ class Primitives{
         }
     }
 
-    Path = class Path extends this{
+    Path = class Path extends Primitives{
         constructor(x1, y1, x2, y2, style){
             super();
             // calling patterns:
@@ -207,7 +207,7 @@ class Primitives{
         }    
     }
 
-    Color = class Color extends this{
+    Color = class Color extends Primitives{
         constructor(a,b,c,d){
             super();
             let rgba = Colors.decode(a,b,c,d);

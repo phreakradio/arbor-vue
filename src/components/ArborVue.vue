@@ -21,8 +21,6 @@ export default {
 	},
 	mounted(){
 		this.sys.renderer = new Renderer(this.$refs.arborViewport);
-		// this.sys.renderer = new Renderer("#arborViewport");
-		this.sys.init();
 	}
 }
 </script>
