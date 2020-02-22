@@ -23,7 +23,7 @@ class Physics{
 
     SPEED_LIMIT = 1000; // the max particle velocity per tick
 
-    constructor(dt, stiffness, repulsion, friction, updateFn, integrator){
+    constructor(dt, stiffness, repulsion, friction, updateCtx, integrator){
         this.integrator = ['verlet','euler'].indexOf(integrator)>=0 ? integrator : 'verlet';
         this.stiffness = (stiffness!==undefined) ? stiffness : 1000;
         this.repulsion = (repulsion!==undefined)? repulsion : 600;
@@ -31,7 +31,7 @@ class Physics{
         this.gravity = false;
         this.dt = (dt!==undefined)? dt : 0.02;
         this.theta = .4; // the criterion value for the barnes-hut s/d calculation
-        this.updateFn = updateFn;
+        this.updateCtx = updateCtx;
     }
 
     modifyPhysics(param){
@@ -161,7 +161,8 @@ class Physics{
             coords.push(pt.p.y);
         });
 
-        if (this.updateFn) this.updateFn({geometry:coords, epoch:this._epoch, energy:this._energy, bounds:this._bounds});
+        // this.system
+        if (this.updateCtx) this.updateCtx._updateGeometry({geometry:coords, epoch:this._epoch, energy:this._energy, bounds:this._bounds});
     }
 
     tendParticles(){
@@ -280,7 +281,7 @@ class Physics{
         forEach(this.active.particles, function(point) {
             let direction = point.p.multiply(-1.0);
             point.applyForce(direction.multiply(this.repulsion / 100.0));
-        });
+        }.bind(this));
     }
 
     updateVelocity(timestep){
@@ -310,7 +311,7 @@ class Physics{
             sum += e;
             max = Math.max(e,max);
             n++;
-        });
+        }.bind(this));
         this._energy = {sum:sum, max:max, mean:sum/n, n:n};
     }
 
@@ -343,7 +344,7 @@ class Physics{
             if (pt.y > bottomright.y) bottomright.y = pt.y;          
             if (pt.x < topleft.x)     topleft.x = pt.x;
             if (pt.y < topleft.y)     topleft.y = pt.y;
-        });
+        }.bind(this));
 
         this._bounds = {topleft:topleft||new Point(-1,-1), bottomright:bottomright||new Point(1,1)};
     }

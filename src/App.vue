@@ -37,14 +37,14 @@ export default {
 				nodes:{
 					central: {
 						'color': color.black, 
+						'mass' : 100,
 						'shape': 'dot', 
 						'radius': 10,
-						'image_w': 73,
-						'image_h': 24,
 						'alpha': 1
 					},
 					python:{
 						'color': color.orange,
+						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
 						// 'image': 'python.png',
@@ -54,6 +54,7 @@ export default {
 					},
 					cplus:{
 						'color': color.uber,
+						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
 						// 'image': 'c++.png',
@@ -63,6 +64,7 @@ export default {
 					},
 					java:{
 						'color': color.brown,
+						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
 						// 'image': 'java.png',
@@ -72,6 +74,7 @@ export default {
 					},
 					android:{
 						'color': color.green,
+						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
 						// 'image':  'android.png',
@@ -81,66 +84,77 @@ export default {
 					},
 					python1:{
 						'label': 'Tic-Tac-Toe',
+						'mass' : 25,
 						'color': color.orange, 
 						'alpha': 0, 
 						'link': 'https://github.com/phreakradio/TicTacToe'
 					},
 					python2:{
-						'label': 'Router Simulator', 
+						'label': 'Router Simulator',
+						'mass' : 25, 
 						'color': color.orange, 
 						'alpha': 0, 
 						'link': 'https://github.com/phreakradio/Router_simulator'
 					},
 					java1:{
 						'label': 'L.E.T.T.E.R',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/LETTER'
 					},
 					java2:{
 						'label': 'Game of Life',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/Conways-Game-Of-Life'
 					},
 					java3:{
 						'label': 'MazeSolver',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/MazeSolver'
 					},
 					java4:{
 						'label': 'Towers of Hanoi',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/Towers-of-Hanoi'
 					},
 					java5:{
 						'label': 'DFA Verifier',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/DFA-Verifier'
 					},
 					java6:{
 						'label': 'PDA Verifier',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/PDA-Verfier'
 					},
 					java7:{
 						'label': 'DES Encryptor/Decryptor',
+						'mass' : 25,
 						'color': color.brown, 
 						'alpha': 0,
 						'link': 'https://github.com/phreakradio/DES-Example-in-Java'
 					},
 					android1:{
 						'label': 'CS490 Project', 
+						'mass' : 25,
 						'color': color.green, 
 						'alpha': 0,
 						'link': 'https://github.com/hkajur/Code_Testing/tree/master/MobileApp/CS490ProjectRelease'
 					},
 					cplus1:{
 						'label': 'LongInteger Arithmetic',
+						'mass' : 25,
 						'color': color.uber,
 						'alpha':0,
 						'link': 'https://github.com/phreakradio/LongInteger-Arithmetic-functions'

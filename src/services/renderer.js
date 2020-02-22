@@ -68,11 +68,14 @@ class Renderer{
 
 	redraw(){
 		if (!this.particleSystem) return;
-		this.gfx.clear(); // convenience ƒ: clears the whole canvas rect
+		let gfx = this.gfx;
+
+		gfx.clear(); // convenience ƒ: clears the whole canvas rect
 
 		// draw the nodes & save their bounds for edge drawing
 		let nodeBoxes = {};
 		
+
 		// draw the edges
 		this.particleSystem.eachEdge(function(edge, pt1, pt2){
 			// edge: {source:Node, target:Node, length:#, data:{}}
@@ -81,8 +84,8 @@ class Renderer{
 
 			// Don't draw lines that shouldn't be there
 			if (edge.source.data.alpha * edge.target.data.alpha == 0) return;
-			this.gfx.line(pt1, pt2, {stroke:Colors.CSS.gray, width:1, alpha:edge.target.data.alpha});
-		});
+			gfx.line(edge._id, pt1, pt2, {stroke:Colors.CSS.gray, width:1, alpha:edge.target.data.alpha});
+		}.bind(this));
 		
 		// draw the nodes
 		this.particleSystem.eachNode(function(node, pt){
@@ -121,7 +124,7 @@ class Renderer{
 			// Draw the object
 			if (node.data.shape=='dot'){
 				// Check if it's a dot
-				this.gfx.oval(pt.x-w/2, pt.y-w/2, w,w, {fill:this.ctx.fillStyle, alpha:node.data.alpha});
+				this.gfx.oval(node._id, pt.x-w/2, pt.y-w/2, w,w, {fill:this.ctx.fillStyle, alpha:node.data.alpha});
 				nodeBoxes[node.name] = [pt.x-w/2, pt.y-w/2, w,w];
 				// Does it have an image?
 				if (imageob){
@@ -131,7 +134,7 @@ class Renderer{
 			}
 			else {
 				// If none of the above, draw a rectangle
-				this.gfx.rect(pt.x-w/2, pt.y-10, w,20, 4, {fill:this.ctx.fillStyle, alpha:node.data.alpha});
+				this.gfx.rect(node._id, pt.x-w/2, pt.y-10, w,20, 4, {fill:this.ctx.fillStyle, alpha:node.data.alpha});
 				nodeBoxes[node.name] = [pt.x-w/2, pt.y-11, w, 22];
 			}
 
@@ -191,14 +194,16 @@ class Renderer{
 
 		let _section = null;
 
+		let system = this.particleSystem;
+
 		let handler = {
 			moved:function(e){
 				let pos = {
-					left : this.canvas.offsetLeft,
-					top : this.canvas.offsetTop
+					left : this.offsetLeft,
+					top : this.offsetTop
 				}
 				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
-				nearest = this.particleSystem.nearest(_mouseP);
+				nearest = system.nearest(_mouseP);
 
 				if (!nearest.node) return false;
 
@@ -206,12 +211,12 @@ class Renderer{
 					selected = (nearest.distance < 50) ? nearest : null;
 
 					if (selected){
-						this.canvas.addClass('linkable');
+						this.classList.add('linkable');
 						// Will need to re-enable this for clickable links
 						// window.status = selected.node.data.link.replace(/^\//,"http://"+window.location.host+"/").replace(/^#/,'') 
 					}
 					else{
-						this.canvas.removeClass('linkable');
+						this.classList.remove('linkable');
 						window.status = '';
 					}
 				}
@@ -220,7 +225,7 @@ class Renderer{
 						_section = nearest.node.name;
 						this.switchSection(_section);
 					}
-					this.canvas.removeClass('linkable');
+					this.classList.remove('linkable');
 					window.status = ''
 				}
 				
@@ -228,9 +233,12 @@ class Renderer{
 			},
 
 			clicked:function(e){
-				var pos = this.canvas.offset();
+				let pos = {
+					left : this.offsetLeft,
+					top: this.offsetTop
+				};
 				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
-				nearest = dragged = this.particleSystem.nearest(_mouseP);
+				nearest = dragged = system.nearest(_mouseP);
 
 				if (nearest && selected && nearest.node===selected.node){
 					if (selected.node.data.link) {
@@ -247,20 +255,26 @@ class Renderer{
 					}
 				}
 
-				if (dragged && dragged.node !== null) dragged.node.fixed = true;
-				this.canvas.unbind('mousemove', handler.moved);
-				this.canvas.bind('mousemove', handler.dragged);
+				if (dragged && dragged.node !== null) {
+					// while we're dragging, don't let physics move the node
+					dragged.node.fixed = true;
+				}
+				this.removeEventListener('mousemove', handler.moved);
+				this.addEventListener('mousemove', handler.dragged);
 
 				return false;
 			},
 
 			dragged:function(e){
-				let pos = this.canvas.offset();
-				var s = new Point(e.pageX-pos.left, e.pageY-pos.top);
+				let pos = {
+					left : this.offsetLeft,
+					top: this.offsetTop
+				};
+				let s = new Point(e.pageX-pos.left, e.pageY-pos.top);
 
 				if (!nearest) return;
 				if (dragged !== null && dragged.node !== null){
-					let p = this.particleSystem.fromScreen(s);
+					let p = system.fromScreen(s);
 					dragged.node.p = p;
 				}
 
@@ -272,15 +286,15 @@ class Renderer{
 				if (dragged.node !== null) dragged.node.fixed = false;
 				dragged.node.tempMass = 1000;
 				dragged = null;
-				this.canvas.unbind('mousemove', handler.dragged);
-				this.canvas.bind('mousemove', handler.moved);
+				this.removeEventListener('mousemove', handler.dragged);
+				this.addEventListener('mousemove', handler.moved);
 				this._mouseP = null;
 				return false;
 			}
 		}
 
-		this.canvas.addEventListener('mousedown', handler.clicked.bind(this));
-		this.canvas.addEventListener('mousemove', handler.moved.bind(this));
+		this.canvas.addEventListener('mousedown', handler.clicked);
+		this.canvas.addEventListener('mousemove', handler.moved);
 	}
 }
 

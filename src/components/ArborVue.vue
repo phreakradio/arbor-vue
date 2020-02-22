@@ -21,6 +21,7 @@ export default {
 	},
 	mounted(){
 		this.sys.renderer = new Renderer(this.$refs.arborViewport);
+		this.sys.start();
 	}
 }
 </script>
@@ -28,6 +29,7 @@ export default {
 <style scoped>
 #arborViewport{
 	border:1px dotted white;
+	width:70%;
 }
 
 </style>

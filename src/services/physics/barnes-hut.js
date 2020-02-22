@@ -9,7 +9,7 @@
 //
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
-import { Point } from './atoms';
+import {Point} from './atoms';
 
 export default class BarnesHutTree{
     _branches = [];
@@ -38,12 +38,14 @@ export default class BarnesHutTree{
             let p_mass = particle._m || particle.m;
             let p_quad = this._whichQuad(particle, node);
 
+            // Quadrant hasn't been filled yet
             if (node[p_quad]===undefined){
                 // slot is empty, just drop this node in and update the mass/c.o.m.
                 node[p_quad] = particle;
                 node.mass += p_mass;
                 if (node.p){
-                    node.p = node.p.add(particle.p.multiply(p_mass));
+                    let tmp = particle.p.multiply(p_mass);
+                    node.p = node.p.add(tmp);
                 }
                 else{
                     node.p = particle.p.multiply(p_mass);
@@ -68,7 +70,7 @@ export default class BarnesHutTree{
                 if (p_quad[1]=='e') branch_origin.x += branch_size.x;
 
                 // replace the previously particle-occupied quad with a new internal branch node
-                var oldParticle = node[p_quad];
+                let oldParticle = node[p_quad];
                 node[p_quad] = this._newBranch();
                 node[p_quad].origin = branch_origin;
                 node[p_quad].size = branch_size;

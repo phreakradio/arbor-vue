@@ -6,11 +6,11 @@
 //  Ported by Dmytro Malaniouk on 2020-01-30.
 //
 
+import assignIn from 'lodash/assignIn';
+import cloneDeep from 'lodash/cloneDeep';
 import forEach from 'lodash/forEach';
 import isArray from 'lodash/isArray';
 import isEmpty from 'lodash/isEmpty';
-import cloneDeep from 'lodash/cloneDeep';
-import assignIn from 'lodash/assignIn';
 
 import {Edge, Point, Node} from "./atoms";
 
@@ -63,21 +63,81 @@ class ParticleSystem{
         };
         this._energy;
 
-        this.state = {
-            renderer:null, // this is set by the library user
-            tween:null, // gets filled in by the Kernel
-            nodes:{}, // lookup based on node _id's from the worker
-            edges:{}, // likewise
-            adjacency:{}, // {name1:{name2:{}, name3:{}}}
-            names:{}, // lookup table based on 'name' field in data objects
+        this._state = {
+            renderer:null,      // this is set by the library user
+            tween:null,         // gets filled in by the Kernel
+            nodes:{},           // lookup based on node _id's from the worker
+            edges:{},           // likewise
+            adjacency:{},       // {name1:{name2:{}, name3:{}}}
+            names:{},           // lookup table based on 'name' field in data objects
             kernel: null
         };
 
-        this.state.kernel = new Kernel(this);
-        this.state.tween = this.state.kernel.tween || null;
+        this._state.kernel = new Kernel(this);
+        this._state.tween = this._state.kernel.tween || null;
+
+        let defineSelf = this;
+        Object.defineProperty(Node, 'p', {
+            get(){
+                let self = this;
+                let roboPoint = {};
+                Object.defineProperty(roboPoint, 'x', {
+                    get(){ return self._p.x;  },
+                    set(newX){ defineSelf._state.kernel.particleModified(self._id, {x:newX}); }
+                });
+
+                Object.defineProperty(roboPoint, 'y', {
+                    get(){ return self._p.y; },
+                    set(newY){ defineSelf._state.kernel.particleModified(self._id, {y:newY}); }
+                });
+                roboPoint.__proto__ = Point.prototype;
+                return roboPoint
+            },
+
+            set(newP){
+                this._p.x = newP.x;
+                this._p.y = newP.y;
+                defineSelf._state.kernel.particleModified(this._id, {x:newP.x, y:newP.y});
+            }
+        });
+
+        Object.defineProperty(Node, "mass", {
+            get(){
+                return this._mass;
+            },
+            set(newM){
+                this._mass = newM;
+                defineSelf._state.kernel.particleModified(this._id, {m:newM});
+            }
+        });
+
+        Object.defineProperty(Node, "tempMass", {
+            set(newM){
+                defineSelf._state.kernel.particleModified(this._id, {_m:newM});
+            }
+        });
+
+        Object.defineProperty(Node, "fixed", {
+            get(){
+                return this._fixed;
+            },
+
+            set(isFixed){
+                this._fixed = isFixed;
+                defineSelf.state.kernel.particleModified(this._id, {f:isFixed?1:0});
+            }
+        });
     }
 
-    parameters(newParams){
+    get state(){
+        return this._state;
+    }
+
+    set state(newState){
+        this._state = newState;
+    }
+
+    parameters(newParams, initial){
         if (newParams!==undefined){
             if (!isNaN(newParams.precision)){
                 newParams.precision = Math.max(0, Math.min(1, newParams.precision))
@@ -85,27 +145,28 @@ class ParticleSystem{
             forEach(this._parameters, function(p){
                 if (newParams[p]!==undefined) this._parameters[p] = newParams[p];
             })
-            this.state.kernel.physicsModified(newParams);
+            if(!initial)
+                this._state.kernel.physicsModified(newParams);
         }
         return this._parameters;
     }
 
     fps(newFPS){
-        if (newFPS===undefined) return this.state.kernel.fps();
+        if (newFPS===undefined) return this._state.kernel.fps();
         else this.parameters({timeout:1000/(newFPS||50)});
     }
 
     start(){
-        this.state.kernel.start();
+        this._state.kernel.start();
     }
 
     stop(){
-        this.state.kernel.stop();
+        this._state.kernel.stop();
     }
 
     addNode(name, data){
         data = data || {};
-        let priorNode = this.state.names[name];
+        let priorNode = this._state.names[name];
         if (priorNode){
             priorNode.data = data;
             return priorNode;
@@ -123,10 +184,10 @@ class ParticleSystem{
 
             let node = new Node(data);
             node.name = name;
-            this.state.names[name] = node;
-            this.state.nodes[node._id] = node;
+            this._state.names[name] = node;
+            this._state.nodes[node._id] = node;
 
-            this._changes.push({t:"addNode", id:node._id, m:node.mass, x:x, y:y, f:fixed});
+            this._changes.push({t:"addNode", id:node._id, m:node._mass, x:x, y:y, f:fixed});
             this._notify();
             return node;
         }
@@ -136,12 +197,12 @@ class ParticleSystem{
     pruneNode(nodeOrName) {
         let node = this.getNode(nodeOrName);
 
-        if (typeof(this.state.nodes[node._id]) !== 'undefined'){
-            delete this.state.nodes[node._id];
-            delete this.state.names[node.name];
+        if (typeof(this._state.nodes[node._id]) !== 'undefined'){
+            delete this._state.nodes[node._id];
+            delete this._state.names[node.name];
         }
 
-        forEach(this.state.edges, function(e){
+        forEach(this._state.edges, function(e){
             if (e.source._id === node._id || e.target._id === node._id){
                 this.pruneEdge(e);
             }
@@ -156,18 +217,18 @@ class ParticleSystem{
             return nodeOrName;
         }
         else if (typeof nodeOrName=='string' || typeof nodeOrName=='number'){
-            return this.state.names[nodeOrName];
+            return this._state.names[nodeOrName];
         }
         // otherwise let it return undefined
     }
 
     eachNode(callback){
         // callback should accept two arguments: Node, Point
-        forEach(this.state.nodes, function(n){
+        forEach(this._state.nodes, function(n){
             if (n._p.x==null || n._p.y==null) return;
             let pt = (this._screenSize!==null) ? this.toScreen(n._p) : n._p;
-            callback.call(this, n, pt);
-        });
+            callback(n, pt);
+        }.bind(this));
     }
 
     addEdge(source, target, data){
@@ -178,19 +239,19 @@ class ParticleSystem{
 
         let src = source._id;
         let dst = target._id;
-        this.state.adjacency[src] = this.state.adjacency[src] || {};
-        this.state.adjacency[src][dst] = this.state.adjacency[src][dst] || [];
+        this._state.adjacency[src] = this._state.adjacency[src] || {};
+        this._state.adjacency[src][dst] = this._state.adjacency[src][dst] || [];
 
-        let exists = (this.state.adjacency[src][dst].length > 0);
+        let exists = (this._state.adjacency[src][dst].length > 0);
         if (exists){
             // probably shouldn't allow multiple edges in same direction
             // between same nodes? for now just overwriting the data...
-            assignIn(this.state.adjacency[src][dst].data, edge.data);
+            assignIn(this._state.adjacency[src][dst].data, edge.data);
             return;
         }
         else{
-            this.state.edges[edge._id] = edge;
-            this.state.adjacency[src][dst].push(edge);
+            this._state.edges[edge._id] = edge;
+            this._state.adjacency[src][dst].push(edge);
             let len = (edge.length!==undefined) ? edge.length : 1;
             this._changes.push({t:"addSpring", id:edge._id, fm:src, to:dst, l:len});
             this._notify();
@@ -202,15 +263,15 @@ class ParticleSystem{
     // remove an edge and its associated lookup entries
     pruneEdge(edge) {
         this._changes.push({t:"dropSpring", id:edge._id});
-        delete this.state.edges[edge._id];
+        delete this._state.edges[edge._id];
 
-        for (var x in this.state.adjacency){
-            for (var y in this.state.adjacency[x]){
-                let edges = this.state.adjacency[x][y];
+        for (var x in this._state.adjacency){
+            for (var y in this._state.adjacency[x]){
+                let edges = this._state.adjacency[x][y];
 
                 for (var j=edges.length - 1; j>=0; j--)  {
-                    if (this.state.adjacency[x][y][j]._id === edge._id){
-                        this.state.adjacency[x][y].splice(j, 1);
+                    if (this._state.adjacency[x][y][j]._id === edge._id){
+                        this._state.adjacency[x][y].splice(j, 1);
                     }
                 }
             }
@@ -225,9 +286,9 @@ class ParticleSystem{
         node2 = this.getNode(node2);
         if (!node1 || !node2) return [];
 
-        if (typeof(this.state.adjacency[node1._id]) !== 'undefined'
-            && typeof(this.state.adjacency[node1._id][node2._id]) !== 'undefined'){
-            return this.state.adjacency[node1._id][node2._id];
+        if (typeof(this._state.adjacency[node1._id]) !== 'undefined'
+            && typeof(this._state.adjacency[node1._id][node2._id]) !== 'undefined'){
+            return this._state.adjacency[node1._id][node2._id];
         }
 
         return [];
@@ -237,9 +298,9 @@ class ParticleSystem{
         node = this.getNode(node);
         if (!node) return [];
 
-        if (typeof(this.state.adjacency[node._id]) !== 'undefined'){
+        if (typeof(this._state.adjacency[node._id]) !== 'undefined'){
             let nodeEdges = [];
-            forEach(this.state.adjacency[node._id], function(subEdges){
+            forEach(this._state.adjacency[node._id], function(subEdges){
                 nodeEdges = nodeEdges.concat(subEdges);
             });
             return nodeEdges;
@@ -253,7 +314,7 @@ class ParticleSystem{
         if (!node) return [];
 
         let nodeEdges = [];
-        forEach(this.state.edges, function(edge){
+        forEach(this._state.edges, function(edge){
             if (edge.target == node) nodeEdges.push(edge);
         });
         
@@ -262,16 +323,16 @@ class ParticleSystem{
 
     eachEdge(callback){
         // callback should accept two arguments: Edge, Point
-        forEach(this.state.edges, function(e){
-            let p1 = this.state.nodes[e.source._id]._p;
-            let p2 = this.state.nodes[e.target._id]._p;
+        forEach(this._state.edges, function(e){
+            let p1 = this._state.nodes[e.source._id]._p;
+            let p2 = this._state.nodes[e.target._id]._p;
 
             if (p1.x==null || p2.x==null) return;
 
             p1 = (this._screenSize!==null) ? this.toScreen(p1) : p1;
             p2 = (this._screenSize!==null) ? this.toScreen(p2) : p2;
 
-            if (p1 && p2) callback.call(e, p1, p2);
+            if (p1 && p2) callback(e, p1, p2);
         }.bind(this));
     }
 
@@ -281,7 +342,7 @@ class ParticleSystem{
         let changes = {dropped:{nodes:[], edges:[]}};
 
         if (callback===undefined){
-            forEach(this.state.nodes, function(node){
+            forEach(this._state.nodes, function(node){
                 this.changes.dropped.nodes.push(node);
                 this.pruneNode(node);
             });
@@ -313,7 +374,7 @@ class ParticleSystem{
                 if (oldNode) oldNode.data = nodeData;
                 else changes.added.nodes.push( this.addNode(name, nodeData) );
 
-                this.state.kernel.start();
+                this._state.kernel.start();
             }.bind(this));
         }
         
@@ -342,13 +403,13 @@ class ParticleSystem{
             }.bind(this));
         }
 
-        return changes
+        return changes;
     }
 
     merge(branch){
         let changes = {added:{nodes:[], edges:[]}, dropped:{nodes:[], edges:[]}};
 
-        forEach(this.state.edges, function(edge){
+        forEach(this._state.edges, function(edge){
             // if ((branch.edges[edge.source.name]===undefined || branch.edges[edge.source.name][edge.target.name]===undefined) &&
             //     (branch.edges[edge.target.name]===undefined || branch.edges[edge.target.name][edge.source.name]===undefined)){
             if ((branch.edges[edge.source.name]===undefined || branch.edges[edge.source.name][edge.target.name]===undefined)){
@@ -374,7 +435,7 @@ class ParticleSystem{
 
     tweenNode(nodeOrName, dur, to){
         let node = this.getNode(nodeOrName);
-        if (node) this.state.tween.to(node, dur, to);
+        if (node) this._state.tween.to(node, dur, to);
     }
 
     tweenEdge(a,b,c,d){
@@ -392,9 +453,11 @@ class ParticleSystem{
     }
 
     _tweenEdge(edge, dur, to){
-        if (edge && edge._id!==undefined) this.state.tween.to(edge, dur, to);
+        if (edge && edge._id!==undefined) this._state.tween.to(edge, dur, to);
     }
 
+    // This gets called from physics.js
+    // TODO figure out how to sub in this.states
     _updateGeometry(e){
         if (e != undefined){
             let stale = (e.epoch<this._epoch);
@@ -406,7 +469,7 @@ class ParticleSystem{
                     var id = pts[3*i];
 
                     // canary silencer...
-                    if (stale && this.state.nodes[id]==undefined) continue;
+                    if (stale && this._state.nodes[id]==undefined) continue;
                     this.state.nodes[id]._p.x = pts[3*i + 1];
                     this.state.nodes[id]._p.y = pts[3*i + 2];
                 }
@@ -496,7 +559,7 @@ class ParticleSystem{
         this._boundsTarget.bottomright = center.add(size.divide(2));
 
         if (!this._bounds){
-            if (isEmpty(this.state.nodes)) return false;
+            if (isEmpty(this._state.nodes)) return false;
             this._bounds = this._boundsTarget;
             return true;
         }
@@ -531,7 +594,7 @@ class ParticleSystem{
         let topleft = null;
 
         // find the true x/y range of the nodes
-        forEach(this.state.nodes, function(node){
+        forEach(this._state.nodes, function(node){
             if (!bottomright){
                 bottomright = new Point(node._p);
                 topleft = new Point(node._p);
@@ -562,7 +625,7 @@ class ParticleSystem{
 
         let min = {node: null, point: null, distance: null};
         
-        forEach(this.state.nodes, function(node){
+        forEach(this._state.nodes, function(node){
             let pt = node._p;
             if (pt.x===null || pt.y===null) return;
             let distance = pt.subtract(pos).magnitude();
@@ -573,7 +636,7 @@ class ParticleSystem{
         }.bind(this));
 
         if (min.node){
-            if (this._screenSize!==null) min.distance = this.toScreen(min.node.p).subtract(this.toScreen(pos)).magnitude();
+            if (this._screenSize!==null) min.distance = this.toScreen(min.point).subtract(this.toScreen(pos)).magnitude();
                 return min;
         }
         else{
@@ -592,7 +655,7 @@ class ParticleSystem{
 
     _synchronize(){
         if (this._changes.length>0){
-            this.state.kernel.graphChanged(this._changes);
+            this._state.kernel.graphChanged(this._changes);
             this._changes = [];
             this._notification = null;
         }
@@ -633,6 +696,3 @@ export default ParticleSystem;
   //     state.kernel.particleModified(this._id, {f:isFixed?1:0})
   //   })
     
-  //   return that
-  // }
-  

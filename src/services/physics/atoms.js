@@ -76,27 +76,19 @@ class Point{
     }
 
     add(v2){
-        this.x = this.x + v2.x;
-        this.y = this.y + v2.y;
-        return this;
+        return new Point(this.x + v2.x, this.y + v2.y);
     }
 
     subtract(v2){
-        this.x = this.x - v2.x;
-        this.y = this.y - v2.y;
-        return this;
+        return new Point(this.x - v2.x, this.y - v2.y);
     }
 
     multiply(n){
-        this.x = this.x * n;
-        this.y = this.y * n;
-        return this;
+        return new Point(this.x*n, this.y*n);
     }
 
     divide(n){
-        this.x = this.x / n;
-        this.y = this.y / n;
-        return this;
+        return new Point(this.x/n, this.y/n);
     }
 
     magnitude(){
@@ -104,10 +96,7 @@ class Point{
     }
 
     normal(){
-        let tmp = this.x;
-        this.x = -this.y;
-        this.y = tmp;
-        return this;
+        return new Point(-this.y, this.x);
     }
 
     normalize(){

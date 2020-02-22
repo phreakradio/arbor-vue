@@ -12,11 +12,11 @@ import isEmpty from 'lodash/isEmpty';
 import mergeWith from 'lodash/mergeWith';
 
 import Colors from './colors';
-import Primitives from './primitives';
+import {Rectangle, Oval, Path} from './primitives';
 
 const nano = (template, data) => {
     return template.replace(/\{([\w\-.]*)}/g, function(str, key){
-        var keys = key.split("."), value = data[keys.shift()];
+        let keys = key.split("."), value = data[keys.shift()];
         forEach(keys, function(k){ 
             if (value.hasOwnProperty(k)) value = value[k];
             else value = str;
@@ -33,7 +33,6 @@ class Graphics{
         this._bounds = null;
 
         this._colorMode = "rgb"; // vs hsb
-        this._coordMode = "origin"; // vs "center"
 
         this._drawLibrary = {};
         this._drawStyle = {
@@ -53,23 +52,18 @@ class Graphics{
             baseline:"ideographic"
         };
 
-        this._lineBuffer = []; // calls to .lines sit here until flushed by .drawlines
-
-        ///MACRO:primitives-start
-        this.primitives = new Primitives(this.ctx, this._drawStyle, this._fontStyle);
-        this._Oval = this.primitives.Oval;
-        this._Rect = this.primitives.Rect;
-        this._Color = this.primitives.Color;
-        this._Path = this.primitives.Path;
-        ///MACRO:primitives-end            
+        this.ovals = {};
+        this.rects = {};
+        this.paths = {};
     }
 
     // canvas-wide settings
     size(width,height){
         if (!isNaN(width) && !isNaN(height)){
-            this.dom.attr({width:width,height:height});
+            this.dom.width = width;
+            this.dom.height = height;
         }
-        return { width:this.dom.attr('width'), height:this.dom.attr('height') };
+        return { width:this.dom.width, height:this.dom.height };
     }
 
     clear(x,y,w,h){
@@ -94,7 +88,7 @@ class Graphics{
             return null;
         }
 
-        var fillColor = Colors.decode(a,b,c,d);
+        let fillColor = Colors.decode(a,b,c,d);
         if (fillColor){
             this._drawStyle.background = fillColor;
             this.clear();
@@ -127,7 +121,7 @@ class Graphics{
             return this._drawStyle.stroke;
         }
         else if (arguments.length>0){
-            var strokeColor = Colors.decode(a,b,c,d);
+            let strokeColor = Colors.decode(a,b,c,d);
             this._drawStyle.stroke = strokeColor;
             this.ctx.strokeStyle = Colors.encode(strokeColor);
         }
@@ -138,10 +132,6 @@ class Graphics{
         this.ctx.lineWidth = this._drawStyle.width = ptsize;
     }
     
-    Color(clr){
-        return new this._Color(clr);
-    }
-
     drawStyle(style){
         // without arguments, show the current state
         if (arguments.length==0) return cloneDeep(this._drawStyle);
@@ -149,12 +139,12 @@ class Graphics{
         // if this is a ("stylename", {style}) invocation, don't change the current
         // state but add it to the library
         if (arguments.length==2){
-            var styleName = arguments[0];
-            var styleDef = arguments[1];
+            let styleName = arguments[0];
+            let styleDef = arguments[1];
             if (typeof styleName=='string' && typeof styleDef=='object'){
-                var newStyle = {};
+                let newStyle = {};
                 if (styleDef.color!==undefined){
-                    var textColor = Colors.decode(styleDef.color);
+                    let textColor = Colors.decode(styleDef.color);
                     if (textColor) newStyle.color = textColor;
                 }
 
@@ -259,8 +249,8 @@ class Graphics{
             this.ctx.font = nano("{size}px {font}", style);
         }
 
-        var alpha = (style.alpha!==undefined) ? style.alpha : this._fontStyle.alpha;
-        var color = (style.color!==undefined) ? style.color : this._fontStyle.color;
+        let alpha = (style.alpha!==undefined) ? style.alpha : this._fontStyle.alpha;
+        let color = (style.color!==undefined) ? style.color : this._fontStyle.color;
         this.ctx.fillStyle = Colors.blend(color, alpha);
         
         if (alpha>0) this.ctx.fillText(textStr, Math.round(style.x), style.y);
@@ -271,7 +261,7 @@ class Graphics{
         style = mergeWith(this._fontStyle, style||{});
         this.ctx.save();
         this.ctx.font = nano("{size}px {font}", style);
-        var width = this.ctx.measureText(textStr).width;
+        let width = this.ctx.measureText(textStr).width;
         this.ctx.restore();
         return width;
     }
@@ -279,47 +269,32 @@ class Graphics{
     // shape primitives.
     // classes will return an {x,y,w,h, fill(), stroke()} object without drawing
     // functions will draw the shape based on current stroke/fill state
-    Rect(x,y,w,h,r,style){
-        return new this._Rect(x,y,w,h,r,style);
-    }
-
-    rect(x, y, w, h, r, style){
-        this._Rect.prototype._draw(x,y,w,h,r,style)
+    rect(id, x, y, w, h, r, style){
+        style = style || {};
+        let rec = (this.rects[id]) 
+                ? this.rects[id].update(x,y,w,h,style) 
+                : new Rectangle(this.ctx,id,x,y,w,h,r,style);
+        this.rects[id] = rec;
+        rec.draw();
     }
     
-    Oval(x, y, w, h, style) {
-        return new this._Oval(x,y,w,h, style);
-    }
-
-    oval(x, y, w, h, style) {
+    oval(id, x, y, w, h, style) {
         style = style || {};
-        this._Oval.prototype._draw(x,y,w,h, style);
+        let o = (this.ovals[id]) 
+                ? this.ovals[id].update(x,y,w,h,style) 
+                : new Oval(this.ctx,id,x,y,w,h,style);
+        this.ovals[id] = o;
+        o.draw();
     }
 
     // draw a line immediately
-    line(x1, y1, x2, y2, style){
-        let p = new this._Path(x1,y1,x2,y2);
-        p.draw(style);
-    }
-    
-    // queue up a line segment to be drawn in a batch by .drawLines
-    lines(x1, y1, x2, y2){
-        if (typeof y2=='number'){
-            // ƒ( x1, y1, x2, y2)
-            this._lineBuffer.push( [ {x:x1,y:y1}, {x:x2,y:y2} ] );
-        }
-        else{
-            // ƒ( {x:1, y:1}, {x:2, y:2} )
-            this._lineBuffer.push( [ x1,y1 ] );
-        }
-    }
-    
-    // flush the buffered .lines to screen
-    drawLines(style){
-        let p = new this._Path(this._lineBuffer);
-        p.draw(style);
-        this._lineBuffer = [];
-    }    
+    line(id, s1, s2, style){
+        let p = (this.paths[id]) 
+                ? this.paths[id].update(s1.x,s1.y,s2.x,s2.y, style) 
+                : new Path(this.ctx,id,s1.x,s1.y,s2.x,s2.y, style);
+        this.paths[id] = p;
+        p.draw();
+    }  
 }
 
 export default Graphics;

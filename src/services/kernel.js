@@ -53,8 +53,8 @@ export default class Kernel{
             });
         }
         else{
-            this._physics = new Physics(params.dt, params.stiffness, params.repulsion, params.friction, this.system._updateGeometry, params.integrator);
-            this.start();
+            this._physics = new Physics(params.dt, params.stiffness, params.repulsion, params.friction, this.system, params.integrator);
+            // this.start();
         }
     }
 
@@ -93,7 +93,7 @@ export default class Kernel{
         if (this.USE_WORKER) this._physics.postMessage({type:'sys',param:param});
         else this._physics.modifyPhysics(param);
         this.start() // <- is this just to kick things off in the non-worker mode? (yes)
-      }
+    }
 
     workerMsg(e){
         var type = e.data.type;
