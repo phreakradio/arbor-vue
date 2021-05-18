@@ -199,8 +199,8 @@ class Renderer{
 		let handler = {
 			moved:function(e){
 				let pos = {
-					left : this.offsetLeft,
-					top : this.offsetTop
+					left : e.offsetX,
+					top : e.offsetY
 				}
 				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
 				nearest = system.nearest(_mouseP);
@@ -220,7 +220,7 @@ class Renderer{
 						window.status = '';
 					}
 				}
-				else if (has(nearest.node.name, ['python', 'java','android','web','cplus'])){
+				else if (has(nearest.node.name, ['africa', 'asia','europe','nAmerica','sAmerica','oceania'])){
 					if (nearest.node.name!=_section){
 						_section = nearest.node.name;
 						this.switchSection(_section);
@@ -234,8 +234,8 @@ class Renderer{
 
 			clicked:function(e){
 				let pos = {
-					left : this.offsetLeft,
-					top: this.offsetTop
+					left : e.offsetX,
+					top: e.offsetY
 				};
 				let _mouseP = new Point(e.pageX-pos.left, e.pageY-pos.top);
 				nearest = dragged = system.nearest(_mouseP);
@@ -267,8 +267,8 @@ class Renderer{
 
 			dragged:function(e){
 				let pos = {
-					left : this.offsetLeft,
-					top: this.offsetTop
+					left : e.offsetX,
+					top: e.offsetY
 				};
 				let s = new Point(e.pageX-pos.left, e.pageY-pos.top);
 
@@ -295,6 +295,7 @@ class Renderer{
 
 		this.canvas.addEventListener('mousedown', handler.clicked);
 		this.canvas.addEventListener('mousemove', handler.moved);
+		this.canvas.addEventListener('mouseup',   handler.dropped);
 	}
 }
 

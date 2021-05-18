@@ -21,15 +21,10 @@ export default {
 	},
 	mounted(){
 		this.sys.renderer = new Renderer(this.$refs.arborViewport);
-		this.sys.start();
+		this.sys.renderer.init();
 	}
 }
 </script>
 
 <style scoped>
-#arborViewport{
-	border:1px dotted white;
-	width:70%;
-}
-
 </style>

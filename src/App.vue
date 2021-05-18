@@ -1,7 +1,8 @@
 <template>
 	<div id='app'>
-		<Arbor :systemParms="systemParms"
-				:particleParms="particleParms"/>
+		<Arbor class="arbor"
+				:systemParms="system"
+				:particleParms="particles"/>
 	</div>
 </template>
 
@@ -16,24 +17,22 @@ export default {
 	data(){
 		let color = {
 			black: '#000000',
-			darkblue: '#4046F5',
-			gray: '#8A8A86',
-			orange: '#FFD900',
-			purple: '#941e5e',
-			brown: '#BFA843',
-			lightblue: '#009fc3',
-			uber: '#666666',
-			green: '#73B55B'
+			africa: "#D68300",
+			asia: "#4D7A00",
+			europe: "#6D87CF",
+			nAmerica: "#D4E200",
+			sAmerica: "#CD2900",
+			oceania: "#4F2170"
 		};
 
 		return{
-			systemParms : {
+			system : {
 				stiffness:700,
 				repulsion:700, 
 				gravity:false, 
 				dt:0.015
 			},
-			particleParms : {
+			particles : {
 				nodes:{
 					central: {
 						'color': color.black, 
@@ -42,149 +41,57 @@ export default {
 						'radius': 10,
 						'alpha': 1
 					},
-					python:{
-						'color': color.orange,
+					africa:{
+						'color': color.africa,
 						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
-						// 'image': 'python.png',
-						'image_w': 25,
-						'image_h': 25,
 						'alpha': 1
 					},
-					cplus:{
-						'color': color.uber,
+					asia:{
+						'color': color.asia,
 						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
-						// 'image': 'c++.png',
-						'image_w': 25,
-						'image_h': 25,
 						'alpha': 1
 					},
-					java:{
-						'color': color.brown,
+					europe:{
+						'color': color.europe,
 						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
-						// 'image': 'java.png',
-						'image_w': 25,
-						'image_h': 25,
 						'alpha': 1
 					},
-					android:{
-						'color': color.green,
+					nAmerica:{
+						'color': color.nAmerica,
 						'mass' : 50,
 						'shape': 'dot',
 						'radius': 50, 
-						// 'image':  'android.png',
-						'image_w': 25,
-						'image_h': 25,
 						'alpha': 1
 					},
-					python1:{
-						'label': 'Tic-Tac-Toe',
-						'mass' : 25,
-						'color': color.orange, 
-						'alpha': 0, 
-						'link': 'https://github.com/phreakradio/TicTacToe'
+					sAmerica:{
+						'color': color.sAmerica,
+						'mass' : 50,
+						'shape': 'dot',
+						'radius': 50, 
+						'alpha': 1
 					},
-					python2:{
-						'label': 'Router Simulator',
-						'mass' : 25, 
-						'color': color.orange, 
-						'alpha': 0, 
-						'link': 'https://github.com/phreakradio/Router_simulator'
+					oceania:{
+						'color': color.oceania,
+						'mass' : 50,
+						'shape': 'dot',
+						'radius': 50, 
+						'alpha': 1
 					},
-					java1:{
-						'label': 'L.E.T.T.E.R',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/LETTER'
-					},
-					java2:{
-						'label': 'Game of Life',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/Conways-Game-Of-Life'
-					},
-					java3:{
-						'label': 'MazeSolver',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/MazeSolver'
-					},
-					java4:{
-						'label': 'Towers of Hanoi',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/Towers-of-Hanoi'
-					},
-					java5:{
-						'label': 'DFA Verifier',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/DFA-Verifier'
-					},
-					java6:{
-						'label': 'PDA Verifier',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/PDA-Verfier'
-					},
-					java7:{
-						'label': 'DES Encryptor/Decryptor',
-						'mass' : 25,
-						'color': color.brown, 
-						'alpha': 0,
-						'link': 'https://github.com/phreakradio/DES-Example-in-Java'
-					},
-					android1:{
-						'label': 'CS490 Project', 
-						'mass' : 25,
-						'color': color.green, 
-						'alpha': 0,
-						'link': 'https://github.com/hkajur/Code_Testing/tree/master/MobileApp/CS490ProjectRelease'
-					},
-					cplus1:{
-						'label': 'LongInteger Arithmetic',
-						'mass' : 25,
-						'color': color.uber,
-						'alpha':0,
-						'link': 'https://github.com/phreakradio/LongInteger-Arithmetic-functions'
-					}
 				},
 				edges:{
 					central:{
-						python:{},
-						java:{},
-						android:{},
-						cplus:{}
-					},
-					python:{
-						python1:{},
-						python2:{}
-					},
-					java:{
-						java1:{},
-						java2:{},
-						java3:{},
-						java4:{},
-						java5:{},
-						java6:{},
-						java7:{}
-					},
-					cplus:{
-						cplus1:{}
-					},
-					android:{
-						android1:{}
+						africa: {},
+						asia: {},
+						europe: {},
+						nAmerica: {},
+						sAmerica: {},
+						oceania: {}
 					}
 				}
 			}
@@ -199,12 +106,20 @@ export default {
 	padding:0;
 }
 #app {
-  font-family: 'Avenir', Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  background: #000;
-  width:100vw;
-  height:100vh;
+	font-family: 'Avenir', Helvetica, Arial, sans-serif;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	text-align: center;
+	background: #000;
+	width:100vw;
+	height:100vh;
 }
+
+.arbor{
+	border:1px dotted white;
+	background: white;
+	width:100%;
+	margin: auto;
+}
+
 </style>
