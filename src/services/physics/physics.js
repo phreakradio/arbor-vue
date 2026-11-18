@@ -12,16 +12,16 @@ import BarnesHutTree from './barnes-hut';
 import { Particle, Spring, Point } from './atoms';
 
 var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator){
-    var bhTree = BarnesHutTree() // for computing particle repulsion
-    var active = {particles:{}, springs:{}}
-    var free = {particles:{}}
-    var particles = []
-    var springs = []
-    var _epoch=0
-    var _energy = {sum:0, max:0, mean:0}
-    var _bounds = {topleft:new Point(-1,-1), bottomright:new Point(1,1)}
+    var bhTree = BarnesHutTree(); // for computing particle repulsion
+    var active = {particles:{}, springs:{}};
+    var free = {particles:{}};
+    var particles = [];
+    var springs = [];
+    var _epoch=0;
+    var _energy = {sum:0, max:0, mean:0};
+    var _bounds = {topleft:new Point(-1,-1), bottomright:new Point(1,1)};
 
-    var SPEED_LIMIT = 1000 // the max particle velocity per tick
+    var SPEED_LIMIT = 1000; // the max particle velocity per tick
 
     var that = {
         integrator:['verlet','euler'].indexOf(integrator)>=0 ? integrator : 'verlet',
@@ -58,7 +58,7 @@ var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator)
                         });
                     }
                 }
-            }            
+            });
         },
 
         addNode:function(c){
@@ -139,7 +139,7 @@ var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator)
 
             forEach(changes, (c) => {
                 if (c.t in that) that[c.t](c);
-            };
+            });
             return _epoch;  
         },
 
@@ -245,7 +245,7 @@ var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator)
             // ...and use it to approximate the repulsion forces
             forEach(active.particles, (particle) => {
                 bhTree.applyForces(particle, that.repulsion);
-            };
+            });
         },
 
         applySprings:function(){
@@ -310,7 +310,7 @@ var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator)
                 point.f.x = point.f.y = 0
 
                 let speed = point.v.magnitude();
-                if (speed>that.SPEED_LIMIT) point.v = point.v.divide(speed*speed);
+                if (speed>SPEED_LIMIT) point.v = point.v.divide(speed*speed);
 
                 speed = point.v.magnitude();
                 
@@ -356,7 +356,7 @@ var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator)
             _bounds = {topleft:topleft||new Point(-1,-1), bottomright:bottomright||new Point(1,1)};
         },
 
-        systemEnergy:function(timestep){
+        systemEnergy:function(){
             // system stats
             return _energy;
         }

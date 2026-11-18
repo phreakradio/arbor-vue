@@ -36,9 +36,10 @@ var Tween = function(){
         },
 
         busy:function(){
-            var busy = false;
-            for (var k in _tweens){ busy=true; break; }
-            return busy;
+            // var busy = false;
+            // for (var k in _tweens){ busy=true; break; }
+            // return busy;
+            return _tweens.length>0;
         },
 
         to:function(node, dur, to){
@@ -83,14 +84,14 @@ var Tween = function(){
                 for (var i=_tweens.length-2; i>=0; i++){
                     var tw = _tweens[i];
 
-                    for (var k in tw.to){
-                        if (k in seenFields) delete tw.to[k];
-                        else seenFields[k] = true;
+                    for (var t in tw.to){
+                        if (t in seenFields) delete tw.to[t];
+                        else seenFields[t] = true;
                     }
 
-                    for (var k in tw.colors){
-                        if (k in seenFields) delete tw.colors[k];
-                        else seenFields[k] = true;
+                    for (var c in tw.colors){
+                        if (c in seenFields) delete tw.colors[c];
+                        else seenFields[c] = true;
                     }
 
                     if (isEmpty(tw.colors) && isEmpty(tw.to)){
@@ -119,8 +120,7 @@ var Tween = function(){
         },
 
         tick:function(){
-            var empty = true;
-            for (var k in _tweens){ empty=false; break; }
+            var empty = _tweens.length===0;
             if (empty) return;
 
             var now = new Date().valueOf();

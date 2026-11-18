@@ -55,14 +55,14 @@ var Spring = function(point1, point2, length, k){
     this.length = length; // spring length at rest
     this.k = k;           // stiffness
 };
-Spring.prototype = {
-    distanceToParticle:function(point){
-        // see http://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment/865080#865080
-        var n = that.point2.p.subtract(that.point1.p).normalize().normal();
-        var ac = point.p.subtract(that.point1.p);
-        return Math.abs(ac.x * n.x + ac.y * n.y);
-    }
-};
+// Spring.prototype = {
+//     distanceToParticle:function(point){
+//         // see http://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment/865080#865080
+//         var n = that.point2.p.subtract(that.point1.p).normalize().normal();
+//         var ac = point.p.subtract(that.point1.p);
+//         return Math.abs(ac.x * n.x + ac.y * n.y);
+//     }
+// };
 
 // === POINT === 
 

@@ -16,6 +16,7 @@ var BarnesHutTree = function(){
     var _branchCtr = 0;
     var _root = null;
     var _theta = .5;
+    var node = _root;
 
     var that = {
         init:function(topleft, bottomright, theta){
@@ -30,7 +31,6 @@ var BarnesHutTree = function(){
 
         insert:function(newParticle){
             // add a particle to the tree, starting at the current _root and working down
-            var node = _root;
             var queue = [newParticle];
 
             while (queue.length){
@@ -111,11 +111,11 @@ var BarnesHutTree = function(){
 
                 if ('f' in node){
                     // this is a particle leafnode, so just apply the force directly
-                    var d = particle.p.subtract(node.p);
-                    var distance = Math.max(1.0, d.magnitude());
-                    var direction = ((d.magnitude()>0) ? d : Point.random(1)).normalize()
-                    particle.applyForce(direction.multiply(repulsion*(node._m||node.m))
-                                          .divide(distance * distance) );
+                    var dl = particle.p.subtract(node.p);
+                    var distancel = Math.max(1.0, dl.magnitude());
+                    var directionl = ((dl.magnitude()>0) ? dl : Point.random(1)).normalize()
+                    particle.applyForce(directionl.multiply(repulsion*(node._m||node.m))
+                                          .divide(distancel * distancel) );
                 }
                 else{
                     // it's a branch node so decide if it's cluster-y and distant enough
