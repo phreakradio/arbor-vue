@@ -38,6 +38,12 @@ jobs:
           set -euo pipefail
           npm version patch --no-git-tag-version --ignore-scripts
           version="$(node -p "require('./package.json').version")"
+          node --input-type=module -e '
+            const { name, version } = JSON.parse((await import("node:fs")).readFileSync("package.json", "utf8"));
+            const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/${encodeURIComponent(version)}`);
+            if (response.status === 200) throw new Error(`${name}@${version} is already published.`);
+            if (response.status !== 404) throw new Error(`Could not check npm version availability: HTTP ${response.status}`);
+          '
           branch="release/npm-v${version}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

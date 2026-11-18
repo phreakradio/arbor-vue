@@ -18,7 +18,7 @@
     "dist",
     "types",
     "LICENSE",
-    "README",
+    "README.md",
     "CHANGES",
     "THIRD-PARTY-NOTICES"
   ],
@@ -43,6 +43,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:demo": "vite build --config vite.demo.config.js",
     "lint": "eslint src --ext .js,.vue",
     "test": "vitest run",
     "prepublishOnly": "npm run lint && npm test && npm run build"

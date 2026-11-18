@@ -90,6 +90,7 @@ coverage/
 # Nuxt.js build / generate output
 .nuxt
 dist
+demo-dist/
 
 # Gatsby files
 .cache/
