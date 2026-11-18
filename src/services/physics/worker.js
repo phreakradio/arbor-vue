@@ -1,137 +1,77 @@
-//
-// worker.js
-//
-// wraps physics.js in an onMessage/postMessage protocol that the
-// Kernel object can deal with
-//
-//  Ported by Dmytro Malaniouk on 2020-01-30.
-//
-import * from 'atoms.js';
-import BarnesHutTree from 'barnes-hut.js';
-import Physics from './physics';
+import { stepPhysics } from './physics.js';
 
-// endalias
-var PhysicsWorker = function(){
-    var _timeout = 20;
-    var _physics = null;
-    var _physicsInterval = null;
-    var _lastTick = null;
+let particles = [];
+let springs = [];
+let parameters = {};
+let interval = null;
+let epoch = 0;
 
-    var times = [];
-    var last = new Date().valueOf();
+function tick() {
+    const energy = stepPhysics(particles, springs, parameters);
+    const geometry = new Float64Array(particles.length * 3);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    particles.forEach((particle, index) => {
+        const offset = index * 3;
+        geometry[offset] = particle.id;
+        geometry[offset + 1] = particle.x;
+        geometry[offset + 2] = particle.y;
+        minX = Math.min(minX, particle.x);
+        minY = Math.min(minY, particle.y);
+        maxX = Math.max(maxX, particle.x);
+        maxY = Math.max(maxY, particle.y);
+    });
+    const bounds = particles.length
+        ? { topleft: { x: minX, y: minY }, bottomright: { x: maxX, y: maxY } }
+        : { topleft: { x: -1, y: -1 }, bottomright: { x: 1, y: 1 } };
+    self.postMessage({ type: 'geometry', geometry, energy, bounds, epoch }, [geometry.buffer]);
+}
 
-    var that = {  
-        init:function(param){
-            that.timeout(param.timeout);
-            _physics = Physics(param.dt, param.stiffness, param.repulsion, param.friction, that.tock);
-            return that;
-        },
+function stop() {
+    if (interval !== null) clearInterval(interval);
+    interval = null;
+}
 
-        timeout:function(newTimeout){
-            if (newTimeout!=_timeout){
-                _timeout = newTimeout;
-                if (_physicsInterval!==null){
-                    that.stop();
-                    that.go();
-                }
-            }
-        },
-
-        go:function(){
-            if (_physicsInterval!==null) return;
-
-            // postMessage('starting')
-            _lastTick=null;
-            _physicsInterval = setInterval(that.tick, _timeout);
-        },
-
-        stop:function(){
-            if (_physicsInterval===null) return;
-            clearInterval(_physicsInterval);
-            _physicsInterval = null;
-            // postMessage('stopping')
-        },
-
-        tick:function(){
-            // iterate the system
-            _physics.tick();   
-
-
-            // but stop the simulation when energy of the system goes below a threshold
-            var sysEnergy = _physics.systemEnergy();
-            if ((sysEnergy.mean + sysEnergy.max)/2 < 0.05){
-                if (_lastTick===null) _lastTick=new Date().valueOf();
-                if (new Date().valueOf()-_lastTick>1000){
-                    that.stop();
-                }
-                else{
-                  // postMessage('pausing')
-                }
-            }else{
-                _lastTick = null;
-            }
-        },
-
-        tock:function(sysData){
-            sysData.type = "geometry";
-            postMessage(sysData);
-        },
-
-        modifyNode:function(id, mods){
-            _physics.modifyNode(id, mods);
-            that.go();
-        },
-
-        modifyPhysics:function(param){
-            _physics.modifyPhysics(param);
-        },
-
-        update:function(changes){
-            var epoch = _physics._update(changes);
+self.addEventListener('message', ({ data }) => {
+    switch (data.type) {
+    case 'init':
+        stop();
+        particles = data.particles;
+        springs = data.springs;
+        parameters = data.parameters;
+        epoch = data.epoch || 0;
+        break;
+    case 'sync':
+        particles = data.particles;
+        springs = data.springs;
+        epoch = data.epoch || epoch;
+        break;
+    case 'node': {
+        const node = particles.find((particle) => particle.id === data.id);
+        if (node) Object.assign(node, data.changes);
+        break;
+    }
+    case 'parameters':
+        {
+            const wasRunning = interval !== null;
+            stop();
+            parameters = { ...parameters, ...data.parameters };
+            if (wasRunning) interval = setInterval(tick, 1000 / Math.max(1, parameters.fps || 50));
         }
+        break;
+    case 'start':
+        if (interval === null) interval = setInterval(tick, 1000 / Math.max(1, parameters.fps || 50));
+        break;
+    case 'stop':
+        stop();
+        break;
+    case 'destroy':
+        stop();
+        self.close();
+        break;
+    default:
+        self.postMessage({ type: 'error', message: `Unknown worker message: ${data.type}` });
     }
-
-    return that;
-}
-
-
-var physics = PhysicsWorker();
-
-onmessage = function(e){
-    if (!e.data.type){
-        postMessage("¿kérnèl?");
-        return;
-    }
-
-    if (e.data.type=='physics'){
-        var param = e.data.physics;
-        physics.init(e.data.physics);
-        return;
-    }
-
-    switch(e.data.type){
-        case "modify":
-            physics.modifyNode(e.data.id, e.data.mods);
-            break;
-
-        case "changes":
-            physics.update(e.data.changes);
-            physics.go();
-            break;
-
-        case "start":
-            physics.go();
-            break;
-
-        case "stop":
-            physics.stop();
-            break;
-
-        case "sys":
-            var param = e.data.param || {};
-            if (!isNaN(param.timeout)) physics.timeout(param.timeout);
-            physics.modifyPhysics(param);
-            physics.go();
-            break;
-    }
-}
+});

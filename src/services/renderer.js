@@ -1,242 +1,217 @@
-'use strict';
+import { Point } from './physics/atoms.js';
 
-import Graphics from "./graphics/graphics";
-import {Point} from "./physics/atoms";
-
-import has from 'lodash/has';
-import map from 'lodash/map';
-
-
-function Renderer(canvas){
-	var ctx = canvas.getContext("2d")
-	var gfx = Graphics(canvas)
-	var particleSystem = null
-	var imagepath = './js/graphics/'
-
-	var selected = null,
-		nearest = null,
-		_mouseP = null;
-
-	// Main output section
-	var that = {
-		init:function(system){
-			particleSystem = system;
-			particleSystem.screenSize(canvas.width, canvas.height);
-			particleSystem.screenPadding(25, 50);
-
-			that.initMouseHandling();
-
-			// Preload all images into the node object
-			particleSystem.eachNode(function(node, pt) {
-				if(node.data.image) {
-					node.data.imageob = new Image();
-					node.data.imageob.src = imagepath + node.data.image;
-				}
-			})
-		},
-
-		redraw:function(){
-			if (!particleSystem) return;
-			gfx.clear() // convenience ƒ: clears the whole canvas rect
-			// draw the nodes & save their bounds for edge drawing
-			var nodeBoxes = {}
-
-			// draw the edges
-			particleSystem.eachEdge(function(edge, pt1, pt2){
-				// edge: {source:Node, target:Node, length:#, data:{}}
-				// pt1:  {x:#, y:#}  source position in screen coords
-				// pt2:  {x:#, y:#}  target position in screen coords
-
-				// Don't draw lines that shouldn't be there
-				if (edge.source.data.alpha * edge.target.data.alpha == 0) return;
-				gfx.line(pt1, pt2, {stroke:'#000000', width:1, alpha:edge.target.data.alpha});
-			});
-
-			// draw the nodes
-			particleSystem.eachNode(function(node, pt){
-				// node: {mass:#, p:{x,y}, name:"", data:{}}
-				// pt:   {x:#, y:#}  node position in screen coords
-
-				// Hide hidden nodes
-				if (node.data.alpha===0) return;
-
-				// Load extra info
-				var imageob = node.data.imageob;
-				var imageH = node.data.image_h;
-				var imageW = node.data.image_w;
-				var radius = parseInt(node.data.radius);
-				// determine the box size and round off the coords if we'll be 
-				// drawing a text label (awful alignment jitter otherwise...)
-				var label = node.data.label||"";
-				var w = ctx.measureText(""+label).width + 10;
-				if(w < radius) {
-					w = radius;
-				}
-				if (!(""+label).match(/^[ \t]*$/)){
-					pt.x = Math.floor(pt.x);
-					pt.y = Math.floor(pt.y);
-				}
-				else{
-					label = null;
-				}
-
-				// Set colour
-				if (node.data.color) ctx.fillStyle = node.data.color;
-				else ctx.fillStyle = "rgba(0,0,0,.2)";
-				if (node.data.color=='none') ctx.fillStyle = "white";
-
-				// Draw the object        
-				if (node.data.shape=='dot'){
-					// Check if it's a dot
-					gfx.oval(pt.x-w/2, pt.y-w/2, w,w, {fill:ctx.fillStyle, alpha:node.data.alpha});
-					nodeBoxes[node.name] = [pt.x-w/2, pt.y-w/2, w,w];
-					// Does it have an image?      
-					if (imageob){
-						// Images are cached 
-						ctx.drawImage(imageob, pt.x-(imageW/2), pt.y-radius/4, imageW, imageH);
-					}
-				}
-				else {
-					// If none of the above, draw a rectangle
-					gfx.rect(pt.x-w/2, pt.y-10, w,20, 4, {fill:ctx.fillStyle, alpha:node.data.alpha});
-					nodeBoxes[node.name] = [pt.x-w/2, pt.y-11, w, 22];
-				}
-
-				// Draw the text
-				if (label){
-					ctx.font = "12px Helvetica";
-					ctx.textAlign = "center";
-					ctx.fillStyle = "white";
-					if (node.data.color=='none') ctx.fillStyle = '#333333';
-					ctx.fillText(label||"", pt.x, pt.y+4);
-				}
-
-			});
-		},
-
-		switchSection:function(newSection){
-			var parent = sys.getEdgesFrom(newSection)[0].source;
-			var children = map(sys.getEdgesFrom(newSection), (edge) => {
-				return edge.target;
-			})
-
-			sys.eachNode(function(node){
-				if (node.data.shape=='dot') return; // skip all but leafnodes
-				var nowVisible = (has(node, children)>=0);
-				var newAlpha = (nowVisible) ? 1 : 0;
-				var dt = (nowVisible) ? .5 : .5;
-				sys.tweenNode(node, dt, {alpha:newAlpha});
-				if (newAlpha==1){
-					node.p.x = parent.p.x + 3*Math.random() - .025;
-					node.p.y = parent.p.y + 3*Math.random() - .025;
-					node.tempMass = .001;
-				}
-			});
-		},
-
-		initMouseHandling:function(){
-			// no-nonsense drag and drop (thanks springy.js)
-			selected = null;
-			nearest = null;
-			var dragged = null;
-			var oldmass = 1;
-
-			var _section = null;
-
-			var handler = {
-				moved:function(e){
-					var pos = canvas.offset();
-					_mouseP = Point(e.pageX-pos.left, e.pageY-pos.top);
-					nearest = sys.nearest(_mouseP);
-
-					if (!nearest.node) return false;
-
-					if (nearest.node.data.shape!='dot'){
-						selected = (nearest.distance < 50) ? nearest : null;
-
-						if (selected){
-							dom.addClass('linkable');
-							// Will need to re-enable this for clickable links
-							// window.status = selected.node.data.link.replace(/^\//,"http://"+window.location.host+"/").replace(/^#/,'') 
-						}
-						else{
-							dom.removeClass('linkable');
-							window.status = '';
-						} 
-						//}else if ($.inArray(nearest.node.name, ['python', 'java','terminal','web','cplus']) >=0 ){
-					}
-					else if (has(nearest.node.name, ['verizon', 'eyeview','tiaa','ibm']) >=0 ){
-						if (nearest.node.name!=_section){
-							_section = nearest.node.name;
-							that.switchSection(_section);
-						}
-						dom.removeClass('linkable');
-						window.status = '';
-					}
-
-					return false;
-				},
-
-				clicked:function(e){
-					var pos = canvas.offset();
-					_mouseP = Point(e.pageX-pos.left, e.pageY-pos.top);
-					nearest = dragged = sys.nearest(_mouseP);
-
-					if (nearest && selected && nearest.node===selected.node){
-						if (selected.node.data.link) {
-							var link = selected.node.data.link;
-							if (link.match(/^#/)){
-								that.trigger({type:"navigate", path:link.substr(1)});
-							}
-							else{
-								window.location = link;
-							}
-							return false;
-						}
-					}
-					if (dragged && dragged.node !== null) dragged.node.fixed = true;
-
-					canvas.unbind('mousemove', handler.moved);
-					canvas.bind('mousemove', handler.dragged);
-					window.bind('mouseup', handler.dropped);
-
-					return false;
-				},
-
-				dragged:function(e){
-					var old_nearest = nearest && nearest.node._id;
-					var pos = canvas.offset();
-					var s = Point(e.pageX-pos.left, e.pageY-pos.top);
-
-					if (!nearest) return;
-					if (dragged !== null && dragged.node !== null){
-						var p = sys.fromScreen(s);
-						dragged.node.p = p;
-					}
-
-					return false;
-				},
-
-				dropped:function(e){
-					if (dragged===null || dragged.node===undefined) return;
-					if (dragged.node !== null) dragged.node.fixed = false;
-					dragged.node.tempMass = 1000;
-					dragged = null;
-					// selected = null
-					canvas.unbind('mousemove', handler.dragged);
-					window.unbind('mouseup', handler.dropped);
-					canvas.bind('mousemove', handler.moved);
-					_mouseP = null;
-					return false;
-				}
-			}
-
-			canvas.mousedown(handler.clicked);
-			canvas.mousemove(handler.moved);
-		}
-	}
-
-	return that;
+function alphaOf(node) {
+    const alpha = node.data.alpha;
+    return Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1;
 }
 
-export default Renderer;
+export default class Renderer {
+    constructor(canvas, options = {}) {
+        if (!canvas || typeof canvas.getContext !== 'function') {
+            throw new TypeError('Renderer requires an HTMLCanvasElement.');
+        }
+        this.canvas = canvas;
+        this.context = canvas.getContext('2d');
+        if (!this.context) throw new Error('A 2D canvas context is unavailable.');
+        this.options = options;
+        this.system = null;
+        this._observer = null;
+        this._drag = null;
+        this._destroyed = false;
+        this._dpr = 1;
+        this._width = 0;
+        this._height = 0;
+        this._onPointerDown = (event) => this._pointerDown(event);
+        this._onPointerMove = (event) => this._pointerMove(event);
+        this._onPointerUp = (event) => this._pointerUp(event);
+    }
+
+    init(system) {
+        this.system = system;
+        this.resize();
+        this.canvas.addEventListener('pointerdown', this._onPointerDown);
+        this.canvas.addEventListener('pointermove', this._onPointerMove);
+        this.canvas.addEventListener('pointerup', this._onPointerUp);
+        this.canvas.addEventListener('pointercancel', this._onPointerUp);
+        if (typeof ResizeObserver !== 'undefined') {
+            this._observer = new ResizeObserver(() => this.resize());
+            this._observer.observe(this.canvas);
+        }
+        return this;
+    }
+
+    resize() {
+        const rect = this.canvas.getBoundingClientRect();
+        const width = Math.max(1, rect.width || this.canvas.clientWidth || 300);
+        const height = Math.max(1, rect.height || this.canvas.clientHeight || 150);
+        this._dpr = Math.min(typeof devicePixelRatio === 'number' ? devicePixelRatio : 1, 3);
+        this._width = width;
+        this._height = height;
+        const backingWidth = Math.round(width * this._dpr);
+        const backingHeight = Math.round(height * this._dpr);
+        if (this.canvas.width !== backingWidth || this.canvas.height !== backingHeight) {
+            this.canvas.width = backingWidth;
+            this.canvas.height = backingHeight;
+        }
+        this.context.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
+        if (this.system) this.system.screenSize(width, height);
+        this.redraw();
+    }
+
+    redraw() {
+        if (!this.system || this._destroyed) return;
+        const ctx = this.context;
+        ctx.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
+        ctx.clearRect(0, 0, this._width, this._height);
+        const background = this.options.background;
+        if (background) {
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, this._width, this._height);
+        }
+        this.system.eachEdge((edge, from, to) => this._drawEdge(edge, from, to));
+        this.system.eachNode((node, point) => this._drawNode(node, point));
+    }
+
+    destroy() {
+        this._destroyed = true;
+        if (this._observer) this._observer.disconnect();
+        this._observer = null;
+        this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+        this.canvas.removeEventListener('pointermove', this._onPointerMove);
+        this.canvas.removeEventListener('pointerup', this._onPointerUp);
+        this.canvas.removeEventListener('pointercancel', this._onPointerUp);
+        this._releaseDrag();
+        this.system = null;
+    }
+
+    _drawEdge(edge, from, to) {
+        if (!alphaOf(edge.source) || !alphaOf(edge.target) || edge.data.alpha === 0) return;
+        const ctx = this.context;
+        ctx.save();
+        ctx.globalAlpha = Number.isFinite(edge.data.alpha)
+            ? Math.min(1, Math.max(0, edge.data.alpha))
+            : Math.min(alphaOf(edge.source), alphaOf(edge.target));
+        ctx.strokeStyle = edge.data.color || this.options.edgeColor || '#888';
+        ctx.lineWidth = Number.isFinite(edge.data.width) ? edge.data.width : (this.options.edgeWidth || 1);
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.restore();
+    }
+
+    _drawNode(node, point) {
+        const alpha = alphaOf(node);
+        if (!alpha) return;
+        const ctx = this.context;
+        const radius = Math.max(1, Number(node.data.radius) || this.options.nodeRadius || 6);
+        const shape = node.data.shape || 'dot';
+        const color = node.data.color || this.options.nodeColor || '#526f91';
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color === 'none' ? '#fff' : color;
+
+        if (shape === 'dot') {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            const label = node.data.label === undefined ? String(node.name) : String(node.data.label);
+            ctx.font = this.options.font || '12px sans-serif';
+            const width = Math.max(radius * 2, ctx.measureText(label).width + 12);
+            const height = Number(node.data.height) || 24;
+            const left = point.x - width / 2;
+            const top = point.y - height / 2;
+            const corner = Math.min(4, height / 2);
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(left, top, width, height, corner);
+            } else {
+                ctx.rect(left, top, width, height);
+            }
+            ctx.fill();
+        }
+
+        if (node.data.image && typeof Image !== 'undefined') {
+            const image = this._image(node);
+            if (image && image.complete) {
+                const imageWidth = Number(node.data.image_w) || radius * 2;
+                const imageHeight = Number(node.data.image_h) || radius * 2;
+                ctx.drawImage(image, point.x - imageWidth / 2, point.y - imageHeight / 2, imageWidth, imageHeight);
+            }
+        }
+
+        const label = node.data.label;
+        if (label !== undefined && label !== null && String(label).trim()) {
+            ctx.font = this.options.font || '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = node.data.color === 'none' ? '#333' : (node.data.labelColor || '#fff');
+            ctx.fillText(String(label), point.x, point.y);
+        }
+        ctx.restore();
+    }
+
+    _image(node) {
+        if (node.data.imageob) return node.data.imageob;
+        const image = new Image();
+        image.src = typeof this.options.resolveImage === 'function'
+            ? this.options.resolveImage(node.data.image, node)
+            : node.data.image;
+        node.data.imageob = image;
+        image.addEventListener('load', () => this.redraw(), { once: true });
+        return image;
+    }
+
+    _localPoint(event) {
+        const rect = this.canvas.getBoundingClientRect();
+        return new Point(event.clientX - rect.left, event.clientY - rect.top);
+    }
+
+    _pointerDown(event) {
+        if (!this.system || event.button !== 0) return;
+        const point = this._localPoint(event);
+        const nearest = this.system.nearest(point);
+        if (!nearest) return;
+        const radius = Math.max(12, Number(nearest.node.data.radius) || 8);
+        if (nearest.distance > radius + 8) return;
+        this._drag = {
+            node: nearest.node,
+            pointerId: event.pointerId,
+            fixed: nearest.node.fixed,
+            startX: event.clientX,
+            startY: event.clientY,
+            moved: false
+        };
+        nearest.node.fixed = true;
+        this.canvas.setPointerCapture(event.pointerId);
+        event.preventDefault();
+    }
+
+    _pointerMove(event) {
+        if (!this._drag || this._drag.pointerId !== event.pointerId) return;
+        const point = this._localPoint(event);
+        this._drag.moved = this._drag.moved ||
+            Math.hypot(event.clientX - this._drag.startX, event.clientY - this._drag.startY) > 3;
+        const world = this.system.fromScreen(point);
+        this._drag.node.p = world;
+        event.preventDefault();
+    }
+
+    _pointerUp(event) {
+        if (!this._drag || this._drag.pointerId !== event.pointerId) return;
+        const { node, moved } = this._drag;
+        this._releaseDrag();
+        if (!moved && typeof this.options.onNodeClick === 'function') {
+            this.options.onNodeClick(node, event);
+        }
+    }
+
+    _releaseDrag() {
+        if (!this._drag) return;
+        const { node, fixed } = this._drag;
+        node.fixed = fixed;
+        node.tempMass = 1000;
+        this._drag = null;
+    }
+}

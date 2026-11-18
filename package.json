@@ -1,31 +1,65 @@
 {
   "name": "arbor-vue",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "serve": "vue-cli-service serve",
-    "build": "vue-cli-service build",
-    "build-bundle": "vue-cli-service build --target lib --name arbor-vue ./src/components/index.js",
-    "lint": "vue-cli-service lint",
-    "test": "mocha"
+  "version": "1.0.0",
+  "description": "Force-directed graph visualization for Vue 3",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/arbor-vue.js",
+  "module": "./dist/arbor-vue.js",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./dist/arbor-vue.js"
+    },
+    "./style.css": "./dist/arbor-vue.css"
   },
-  "main": "./main.js",
-  "dependencies": {
-    "core-js": "^3.4.4",
-    "lodash": "^4.17.15",
-    "vue": "^2.6.10"
+  "types": "./types/index.d.ts",
+  "files": [
+    "dist",
+    "types",
+    "LICENSE",
+    "README",
+    "PORTING.md",
+    "CHANGES",
+    "THIRD-PARTY-NOTICES"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/phreakradio/arbor-vue.git"
+  },
+  "homepage": "https://github.com/phreakradio/arbor-vue#readme",
+  "bugs": {
+    "url": "https://github.com/phreakradio/arbor-vue/issues"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "graph",
+    "force-directed",
+    "visualization"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint src --ext .js,.vue",
+    "test": "vitest run",
+    "prepublishOnly": "npm run lint && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "vue": "^3.5.0"
   },
   "devDependencies": {
-    "@vue/cli-plugin-babel": "^4.1.0",
-    "@vue/cli-plugin-eslint": "^4.1.0",
-    "@vue/cli-service": "^4.1.0",
-    "babel-eslint": "^10.0.3",
-    "eslint": "^5.16.0",
-    "eslint-plugin-vue": "^5.0.0",
-    "mocha": "^7.0.1",
-    "vue-template-compiler": "^2.6.10"
+    "@vitejs/plugin-vue": "^6.0.4",
+    "eslint": "^9.39.1",
+    "eslint-plugin-vue": "^10.6.1",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "vue": "^3.5.45"
   },
-  "resolutions": {
-    "eslint-loader": "2.1.2"
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }

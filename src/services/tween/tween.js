@@ -1,185 +1,122 @@
-'use strict';
-//
-// tween.js
-//
-// interpolator of .data field members for nodes and edges
-//
+import Colors from '../graphics/colors.js';
+import Easing from './easing.js';
 
-import forEach from 'lodash/forEach';
-import isEmpty from 'lodash/isEmpty';
-import map from 'lodash/map';
-
-import Easing from './easing';
-import Colors from '../graphics/colors';
-
-var lerpNumber = (proportion,from,to) => {
-    return from + proportion*(to-from);
+const aliases = {
+    bouncein: 'bounceIn',
+    bounceout: 'bounceOut',
+    bounceinout: 'bounceInOut'
 };
 
-var lerpRGB = (proportion,from,to) => {
-    proportion = Math.max(Math.min(proportion,1),0);
-    let mixture = {};
-    
-    forEach('rgba'.split(""), (c) => {
-        mixture[c] = Math.round( from[c] + proportion*(to[c]-from[c]) )
-    });
-    return mixture;
+function easingFunction(name) {
+    const key = aliases[name] || name;
+    return Easing[key] || Easing[name] || Easing.linear;
 }
 
-var Tween = function(){
-    var _tweens = {};
-    var _done = true;
+function interpolateNumber(progress, from, to) {
+    return from + (to - from) * progress;
+}
 
-    var that = {
-        init:function(){
-            return that;
+export default function Tween() {
+    const active = new Map();
+    return {
+        busy() {
+            return active.size > 0;
         },
 
-        busy:function(){
-            // var busy = false;
-            // for (var k in _tweens){ busy=true; break; }
-            // return busy;
-            return _tweens.length>0;
-        },
-
-        to:function(node, dur, to){
-            var now = new Date().valueOf();
-            var seenFields = {};
-
-            var tween = {from:{}, to:{}, colors:{}, node:node, t0:now, t1:now+dur*1000, dur:dur*1000}
-            var easing_fn = "linear";
-            for (var k in to){
-                if (k=='easing'){
-                    // need to do better here. case insensitive and default to linear
-                    // also be okay with functions getting passed in
-                    var ease = to[k].toLowerCase();
-                    if (ease in Easing) easing_fn =ease;
-                    continue;
-                }
-                else if (k=='delay'){
-                    var delay = (to[k]||0) * 1000;
-                    tween.t0 += delay;
-                    tween.t1 += delay;
-                    continue;
-                }
-
-                if (Colors.validate(to[k])){
-                    // it's a hex color string value
-                    tween.colors[k] = [Colors.decode(node.data[k]), Colors.decode(to[k]), to[k]];
-                    seenFields[k] = true;
-                }
-                else{
-                    tween.from[k] = (node.data[k]!=undefined) ? node.data[k] : to[k];
-                    tween.to[k] = to[k];
-                    seenFields[k] = true;
+        to(target, duration, values) {
+            if (!target || !target.data || !Number.isFinite(duration) || duration < 0) {
+                throw new TypeError('A tween requires a node/edge, a non-negative duration, and target values.');
+            }
+            const options = { ...values };
+            const easingName = String(options.easing || 'linear').toLowerCase();
+            const delay = Math.max(0, Number(options.delay) || 0) * 1000;
+            delete options.easing;
+            delete options.delay;
+            const starts = {};
+            const colors = {};
+            for (const [key, value] of Object.entries(options)) {
+                if (Colors.validate(value)) {
+                    starts[key] = Colors.decode(target.data[key]) || Colors.decode('#000000');
+                    colors[key] = Colors.decode(value);
+                } else {
+                    starts[key] = target.data[key] === undefined ? value : target.data[key];
                 }
             }
-            tween.ease = Easing[easing_fn];
 
-            if (_tweens[node._id]===undefined) _tweens[node._id] = [];
-            _tweens[node._id].push(tween);
-
-            // look through queued prunes for any redundancies
-            if (_tweens.length>1){
-                for (var i=_tweens.length-2; i>=0; i++){
-                    var tw = _tweens[i];
-
-                    for (var t in tw.to){
-                        if (t in seenFields) delete tw.to[t];
-                        else seenFields[t] = true;
-                    }
-
-                    for (var c in tw.colors){
-                        if (c in seenFields) delete tw.colors[c];
-                        else seenFields[c] = true;
-                    }
-
-                    if (isEmpty(tw.colors) && isEmpty(tw.to)){
-                        _tweens.splice(i,1);
-                    }                    
+            const previous = active.get(target._id) || [];
+            const fields = new Set(Object.keys(options));
+            const kept = previous.filter((tween) => {
+                for (const field of fields) {
+                    delete tween.to[field];
+                    delete tween.colors[field];
+                    delete tween.from[field];
                 }
-            }
-            _done = false;
-        },
-
-        interpolate:function(pct, src, dst, ease){
-            ease = (ease||"").toLowerCase();
-            var easing_fn = Easing.linear;
-            if (ease in Easing) easing_fn = Easing[ease];
-
-            var proportion = easing_fn( pct, 0,1, 1 );
-            if (Colors.validate(src) && Colors.validate(dst)){
-                return lerpRGB(proportion, src,dst);
-            }
-            else if (!isNaN(src)){
-                return lerpNumber(proportion, src,dst);
-            }
-            else if (typeof src=='string'){
-                return (proportion<.5) ? src : dst;
-            }
-        },
-
-        tick:function(){
-            var empty = _tweens.length===0;
-            if (empty) return;
-
-            var now = new Date().valueOf();
-
-            forEach(_tweens, (tweens, id) => {
-                let unprunedTweens = false;
-
-                forEach(tweens, (tween) => {
-                    let proportion = tween.ease( (now-tween.t0), 0,1, tween.dur );
-                    proportion = Math.min(1.0, proportion);
-                    let from = tween.from;
-                    let to = tween.to;
-                    let colors = tween.colors;
-                    let nodeData = tween.node.data;
-
-                    let lastTick = (proportion==1.0);
-
-                    for (let k in to){
-                        switch (typeof to[k]){
-                            case "number":
-                                nodeData[k] = lerpNumber(proportion, from[k], to[k]);
-                                if (k=='alpha') nodeData[k] = Math.max(0,Math.min(1, nodeData[k]));
-                                break;
-                            case "string":
-                                if (lastTick){
-                                    nodeData[k] = to[k];
-                                }
-                                break;
-                        }
-                    }
-
-                    for (let k in colors){
-                        if (lastTick){
-                            nodeData[k] = colors[k][2];
-                        }
-                        else{
-                            let rgb = lerpRGB(proportion, colors[k][0], colors[k][1]);
-                            nodeData[k] = Colors.encode(rgb);
-                        }
-                    }
-
-                    if (lastTick){
-                        tween.completed = true;
-                        unprunedTweens = true;
-                    }
-                });
-
-                if (unprunedTweens){
-                    _tweens[id] = map(tweens, (t) => { if (!t.completed) return t; });
-                    if (_tweens[id].length==0) delete _tweens[id];
-                }
+                return Object.keys(tween.to).length || Object.keys(tween.colors).length;
             });
+            kept.push({
+                target,
+                from: starts,
+                to: options,
+                colors,
+                start: Date.now() + delay,
+                duration: Math.max(1, duration * 1000),
+                ease: easingFunction(easingName)
+            });
+            active.set(target._id, kept);
+        },
 
-            _done = isEmpty(_tweens);
-            return _done;
+        interpolate(progress, from, to, easing = 'linear') {
+            const ease = easingFunction(String(easing).toLowerCase());
+            const pct = Math.min(1, Math.max(0, ease(progress, 0, 1, 1)));
+            if (Colors.validate(from) && Colors.validate(to)) {
+                const start = Colors.decode(from);
+                const end = Colors.decode(to);
+                return Colors.encode({
+                    r: interpolateNumber(pct, start.r, end.r),
+                    g: interpolateNumber(pct, start.g, end.g),
+                    b: interpolateNumber(pct, start.b, end.b),
+                    a: interpolateNumber(pct, start.a, end.a)
+                });
+            }
+            if (typeof from === 'number' && typeof to === 'number') return interpolateNumber(pct, from, to);
+            return pct < 0.5 ? from : to;
+        },
+
+        tick(now = Date.now()) {
+            for (const [id, tweens] of active) {
+                const remaining = [];
+                for (const tween of tweens) {
+                    if (now < tween.start) {
+                        remaining.push(tween);
+                        continue;
+                    }
+                    const raw = Math.min(1, (now - tween.start) / tween.duration);
+                    const progress = Math.min(1, Math.max(0, tween.ease(raw, 0, 1, 1)));
+                    for (const [key, value] of Object.entries(tween.to)) {
+                        if (tween.colors[key]) {
+                            const from = tween.from[key];
+                            const to = tween.colors[key];
+                            tween.target.data[key] = progress === 1
+                                ? Colors.encode(to)
+                                : Colors.encode({
+                                    r: interpolateNumber(progress, from.r, to.r),
+                                    g: interpolateNumber(progress, from.g, to.g),
+                                    b: interpolateNumber(progress, from.b, to.b),
+                                    a: interpolateNumber(progress, from.a, to.a)
+                                });
+                        } else if (typeof value === 'number' && typeof tween.from[key] === 'number') {
+                            tween.target.data[key] = interpolateNumber(progress, tween.from[key], value);
+                            if (key === 'alpha') tween.target.data[key] = Math.min(1, Math.max(0, tween.target.data[key]));
+                        } else if (progress === 1) {
+                            tween.target.data[key] = value;
+                        }
+                    }
+                    if (raw < 1) remaining.push(tween);
+                }
+                if (remaining.length) active.set(id, remaining);
+                else active.delete(id);
+            }
+            return active.size === 0;
         }
-    }
-
-    return that.init();
+    };
 }
-
-export default Tween;

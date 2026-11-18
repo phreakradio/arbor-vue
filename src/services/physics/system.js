@@ -1,637 +1,682 @@
-'use strict';
-//
-// system.js
-//
-// the main controller object for creating/modifying graphs 
-//
-//  Ported by Dmytro Malaniouk on 2020-01-30.
-//
-
-import assignIn from 'lodash/assignIn';
-import cloneDeep from 'lodash/cloneDeep';
-import forEach from 'lodash/forEach';
-import isArray from 'lodash/isArray';
-import isEmpty from 'lodash/isEmpty';
-
-import {Edge, Point, Node} from "./atoms";
-
-import Kernel from "../kernel.js";
-
-var ParticleSystem = function(repulsion, stiffness, friction, centerGravity, targetFps, dt, precision, integrator){
-    // also callable with ({integrator:, stiffness:, repulsion:, friction:, timestep:, fps:, dt:, gravity:})
-
-    var _changes=[];
-    var _notification=null;
-    var _epoch = 0;
-
-    var _screenSize = null;
-    var _screenStep = .04;
-    var _screenPadding = [20,20,20,20];
-    var _bounds = null;
-    var _boundsTarget = null;
-
-    if (typeof repulsion=='object'){
-        var _p = repulsion;
-        friction = _p.friction;
-        repulsion = _p.repulsion;
-        targetFps = _p.fps;
-        dt = _p.dt;
-        stiffness = _p.stiffness;
-        centerGravity = _p.gravity;
-        precision = _p.precision;
-        integrator = _p.integrator;
-    }
-
-    // param validation and defaults
-    if (integrator!='verlet' && integrator!='euler') integrator='verlet';
-    friction = isNaN(friction) ? .5 : friction;
-    repulsion = isNaN(repulsion) ? 1000 : repulsion;
-    targetFps = isNaN(targetFps) ? 55 : targetFps;
-    stiffness = isNaN(stiffness) ? 600 : stiffness;
-    dt = isNaN(dt) ? 0.02 : dt;
-    precision = isNaN(precision) ? .6 : precision;
-    centerGravity = (centerGravity===true);
-
-    var _systemTimeout = (targetFps!==undefined) ? 1000/targetFps : 1000/50;
-    var _parameters = {integrator:integrator, repulsion:repulsion, stiffness:stiffness, friction:friction, dt:dt, gravity:centerGravity, precision:precision, timeout:_systemTimeout};
-    var _energy;
-
-    var state = {
-        renderer:null, // this is set by the library user
-        tween:null, // gets filled in by the Kernel
-        nodes:{}, // lookup based on node _id's from the worker
-        edges:{}, // likewise
-        adjacency:{}, // {name1:{name2:{}, name3:{}}}
-        names:{}, // lookup table based on 'name' field in data objects
-        kernel: null
-    }
-
-    var that={
-        parameters:function(newParams){
-            if (newParams!==undefined){
-                if (!isNaN(newParams.precision)){
-                    newParams.precision = Math.max(0, Math.min(1, newParams.precision))
-                }
-                forEach(_parameters, (p) => {
-                    if (newParams[p]!==undefined) _parameters[p] = newParams[p];
-                });
-                state.kernel.physicsModified(newParams);
-            }
-            return _parameters;
-        },
-
-        fps:function(newFPS){
-            if (newFPS===undefined) return state.kernel.fps()
-            else that.parameters({timeout:1000/(newFPS||50)})
-        },
-
-        start:function(){
-            state.kernel.start()
-        },
-
-        stop:function(){
-            state.kernel.stop()
-        },
-
-        addNode:function(name, data){
-            data = data || {}
-            var priorNode = state.names[name]
-            if (priorNode){
-                priorNode.data = data
-                return priorNode
-            }
-            else if (name!=undefined){
-                // the data object has a few magic fields that are actually used
-                // by the simulation:
-                //   'mass' overrides the default of 1
-                //   'fixed' overrides the default of false
-                //   'x' & 'y' will set a starting position rather than 
-                //             defaulting to random placement
-                var x = (data.x!=undefined) ? data.x : null
-                var y = (data.y!=undefined) ? data.y : null
-                var fixed = (data.fixed) ? 1 : 0
-
-                var node = new Node(data)
-                node.name = name
-                state.names[name] = node
-                state.nodes[node._id] = node;
-
-                _changes.push({t:"addNode", id:node._id, m:node.mass, x:x, y:y, f:fixed})
-                that._notify();
-                return node;
-            }
-        },
-
-        // remove a node and its associated edges from the graph
-        pruneNode:function(nodeOrName) {
-            var node = that.getNode(nodeOrName);
-
-            if (typeof(state.nodes[node._id]) !== 'undefined'){
-                delete state.nodes[node._id];
-                delete state.names[node.name];
-            }
-
-
-            forEach(state.edges, (e) => {
-                if (e.source._id === node._id || e.target._id === node._id){
-                    that.pruneEdge(e);
-                }
-            })
-
-            _changes.push({t:"dropNode", id:node._id});
-            that._notify();
-        },
-
-        getNode:function(nodeOrName){
-            if (nodeOrName._id!==undefined){
-                return nodeOrName;
-            }
-            else if (typeof nodeOrName=='string' || typeof nodeOrName=='number'){
-                return state.names[nodeOrName];
-            }
-            // otherwise let it return undefined
-        },
-
-        eachNode:function(callback){
-            // callback should accept two arguments: Node, Point
-            forEach(state.nodes, (n) => {
-                if (n._p.x==null || n._p.y==null) return
-                var pt = (_screenSize!==null) ? that.toScreen(n._p) : n._p
-                callback.call(that, n, pt);
-            })
-        },
-
-        addEdge:function(source, target, data){
-            source = that.getNode(source) || that.addNode(source)
-            target = that.getNode(target) || that.addNode(target)
-            data = data || {}
-            var edge = new Edge(source, target, data);
-
-            var src = source._id
-            var dst = target._id
-            state.adjacency[src] = state.adjacency[src] || {}
-            state.adjacency[src][dst] = state.adjacency[src][dst] || []
-
-            var exists = (state.adjacency[src][dst].length > 0)
-            if (exists){
-                // probably shouldn't allow multiple edges in same direction
-                // between same nodes? for now just overwriting the data...
-                assignIn(state.adjacency[src][dst].data, edge.data);
-                return
-            }
-            else{
-                state.edges[edge._id] = edge
-                state.adjacency[src][dst].push(edge)
-                var len = (edge.length!==undefined) ? edge.length : 1
-                _changes.push({t:"addSpring", id:edge._id, fm:src, to:dst, l:len})
-                that._notify()
-            }
-
-            return edge;
-        },
-
-        // remove an edge and its associated lookup entries
-        pruneEdge:function(edge) {
-            _changes.push({t:"dropSpring", id:edge._id})
-            delete state.edges[edge._id]
-
-            for (var x in state.adjacency){
-                for (var y in state.adjacency[x]){
-                    var edges = state.adjacency[x][y];
-
-                    for (var j=edges.length - 1; j>=0; j--)  {
-                        if (state.adjacency[x][y][j]._id === edge._id){
-                            state.adjacency[x][y].splice(j, 1);
-                        }
-                    }
-                }
-            }
-            that._notify();
-        },
-
-        // find the edges from node1 to node2
-        getEdges:function(node1, node2) {
-            node1 = that.getNode(node1)
-            node2 = that.getNode(node2)
-            if (!node1 || !node2) return []
-
-            if (typeof(state.adjacency[node1._id]) !== 'undefined' && typeof(state.adjacency[node1._id][node2._id]) !== 'undefined'){
-                return state.adjacency[node1._id][node2._id];
-            }
-
-            return [];
-        },
-
-        getEdgesFrom:function(node) {
-            node = that.getNode(node);
-            if (!node) return [];
-
-            if (typeof(state.adjacency[node._id]) !== 'undefined'){
-                var nodeEdges = [];
-                forEach(state.adjacency[node._id], (subEdges) => {
-                    nodeEdges = nodeEdges.concat(subEdges);
-                })
-                return nodeEdges;
-            }
-
-            return [];
-        },
-
-        getEdgesTo:function(node) {
-            node = that.getNode(node);
-            if (!node) return [];
-
-            var nodeEdges = []
-            forEach(state.edges, (edge) => {
-                if (edge.target == node) nodeEdges.push(edge);
-            })
-
-            return nodeEdges;
-        },
-
-        eachEdge:function(callback){
-            // callback should accept two arguments: Edge, Point
-            forEach(state.edges, (e) => {
-                var p1 = state.nodes[e.source._id]._p;
-                var p2 = state.nodes[e.target._id]._p;
-
-
-                if (p1.x==null || p2.x==null) return;
-
-                p1 = (_screenSize!==null) ? that.toScreen(p1) : p1;
-                p2 = (_screenSize!==null) ? that.toScreen(p2) : p2;
-
-                if (p1 && p2) callback.call(that, e, p1, p2);
-            })
-        },
-
-        prune:function(callback){
-            // callback should be of the form ƒ(node, {from:[],to:[]})
-
-            var changes = {dropped:{nodes:[], edges:[]}}
-            if (callback===undefined){
-                forEach(state.nodes, function(node){
-                    changes.dropped.nodes.push(node);
-                    that.pruneNode(node);
-                });
-            }
-            else{
-                that.eachNode(function(node){
-                    var drop = callback.call(that, node, {from:that.getEdgesFrom(node), to:that.getEdgesTo(node)});
-                    if (drop){
-                        changes.dropped.nodes.push(node);
-                        that.pruneNode(node);
-                    }
-                });
-            }
-            // trace('prune', changes.dropped)
-            return changes;
-        },
-
-        graft:function(branch){
-            // branch is of the form: { nodes:{name1:{d}, name2:{d},...}, 
-            //                          edges:{fromNm:{toNm1:{d}, toNm2:{d}}, ...} }
-
-            var changes = {added:{nodes:[], edges:[]}};
-            if (branch.nodes) forEach(branch.nodes, function(nodeData, name){
-                var oldNode = that.getNode(name);
-                // should probably merge any x/y/m data as well...
-                // if (oldNode) $.extend(oldNode.data, nodeData)
-
-                if (oldNode) oldNode.data = nodeData;
-                else changes.added.nodes.push( that.addNode(name, nodeData) );
-
-                state.kernel.start();
-            });
-
-            if (branch.edges) forEach(branch.edges, function(dsts, src){
-                var srcNode = that.getNode(src);
-                if (!srcNode) changes.added.nodes.push( that.addNode(src, {}) );
-
-                forEach(dsts, function(edgeData, dst){
-                    // should probably merge any x/y/m data as well...
-                    // if (srcNode) $.extend(srcNode.data, nodeData)
-
-
-                    // i wonder if it should spawn any non-existant nodes that are part
-                    // of one of these edge requests...
-                    var dstNode = that.getNode(dst)
-                    if (!dstNode) changes.added.nodes.push( that.addNode(dst, {}) );
-
-                    var oldEdges = that.getEdges(src, dst);
-                    if (oldEdges.length>0){
-                    // trace("update",src,dst)
-                        oldEdges[0].data = edgeData;
-                    }
-                    else{
-                        // trace("new ->",src,dst)
-                        changes.added.edges.push( that.addEdge(src, dst, edgeData) );
-                    }
-                });
-            });
-
-            // trace('graft', changes.added)
-            return changes;
-        },
-
-        merge:function(branch){
-            var changes = {added:{nodes:[], edges:[]}, dropped:{nodes:[], edges:[]}}
-
-            forEach(state.edges, function(edge){
-                // if ((branch.edges[edge.source.name]===undefined || branch.edges[edge.source.name][edge.target.name]===undefined) &&
-                //     (branch.edges[edge.target.name]===undefined || branch.edges[edge.target.name][edge.source.name]===undefined)){
-                if ((branch.edges[edge.source.name]===undefined || branch.edges[edge.source.name][edge.target.name]===undefined)){
-                    that.pruneEdge(edge);
-                    changes.dropped.edges.push(edge);
-                }
-            })
-
-            var prune_changes = that.prune(function(node, edges){
-                if (branch.nodes[node.name] === undefined){
-                    changes.dropped.nodes.push(node);
-                    return true;
-                }
-            });
-
-            var graft_changes = that.graft(branch);
-            changes.added.nodes = changes.added.nodes.concat(graft_changes.added.nodes);
-            changes.added.edges = changes.added.edges.concat(graft_changes.added.edges);
-            changes.dropped.nodes = changes.dropped.nodes.concat(prune_changes.dropped.nodes);
-            changes.dropped.edges = changes.dropped.edges.concat(prune_changes.dropped.edges);
-
-            // trace('changes', changes)
-            return changes;
-        },
-
-        tweenNode:function(nodeOrName, dur, to){
-            var node = that.getNode(nodeOrName);
-            if (node) state.tween.to(node, dur, to);
-        },
-
-        tweenEdge:function(a,b,c,d){
-            if (d===undefined){
-                // called with (edge, dur, to)
-                that._tweenEdge(a,b,c);
-            }
-            else{
-                // called with (node1, node2, dur, to)
-                var edges = that.getEdges(a,b);
-                forEach(edges, function(edge){
-                    that._tweenEdge(edge, c, d);
-                })
-            }
-        },
-
-        _tweenEdge:function(edge, dur, to){
-            if (edge && edge._id!==undefined) state.tween.to(edge, dur, to);
-        },
-
-        _updateGeometry:function(e){
-            if (e != undefined){          
-                var stale = (e.epoch<_epoch);
-
-                _energy = e.energy;
-                var pts = e.geometry; // an array of the form [id1,x1,y1, id2,x2,y2, ...]
-                if (pts!==undefined){
-                    for (var i=0, j=pts.length/3; i<j; i++){
-                        var id = pts[3*i];
-                                
-                        // canary silencer...
-                        if (stale && state.nodes[id]==undefined) continue;
-
-                        state.nodes[id]._p.x = pts[3*i + 1];
-                        state.nodes[id]._p.y = pts[3*i + 2];
-                    }
-                }
-            }
-        },
-
-        // convert to/from screen coordinates
-        screen:function(opts){
-            if (opts == undefined) return {size:(_screenSize)? objcopy(_screenSize) : undefined, 
-                               padding:_screenPadding.concat(), 
-                               step:_screenStep};
-            if (opts.size!==undefined) that.screenSize(opts.size.width, opts.size.height);
-            if (!isNaN(opts.step)) that.screenStep(opts.step);
-            if (opts.padding!==undefined) that.screenPadding(opts.padding);
-        },
-
-        screenSize:function(canvasWidth, canvasHeight){
-            _screenSize = {width:canvasWidth,height:canvasHeight};
-            that._updateBounds();
-        },
-
-        screenPadding:function(t,r,b,l){
-            if (Array.isArray(t)) trbl = t;
-            else trbl = [t,r,b,l];
-
-            var top = trbl[0];
-            var right = trbl[1];
-            var bot = trbl[2];
-            if (right===undefined) trbl = [top,top,top,top];
-            else if (bot==undefined) trbl = [top,right,top,right];
-
-            _screenPadding = trbl;
-        },
-
-        screenStep:function(stepsize){
-            _screenStep = stepsize;
-        },
-
-        toScreen:function(p) {
-            if (!_bounds || !_screenSize) return;
-            // trace(p.x, p.y)
-
-            var _padding = _screenPadding || [0,0,0,0];
-            var size = _bounds.bottomright.subtract(_bounds.topleft);
-            var sx = _padding[3] + p.subtract(_bounds.topleft).divide(size.x).x * (_screenSize.width - (_padding[1] + _padding[3]));
-            var sy = _padding[0] + p.subtract(_bounds.topleft).divide(size.y).y * (_screenSize.height - (_padding[0] + _padding[2]));
-
-            // return arbor.Point(Math.floor(sx), Math.floor(sy))
-            return arbor.Point(sx, sy);
-        },
-
-        fromScreen:function(s) {
-            if (!_bounds || !_screenSize) return;
-
-            var _padding = _screenPadding || [0,0,0,0];
-            var size = _bounds.bottomright.subtract(_bounds.topleft);
-            var px = (s.x-_padding[3]) / (_screenSize.width-(_padding[1]+_padding[3]))  * size.x + _bounds.topleft.x;
-            var py = (s.y-_padding[0]) / (_screenSize.height-(_padding[0]+_padding[2])) * size.y + _bounds.topleft.y;
-
-            return arbor.Point(px, py);
-        },
-
-        _updateBounds:function(newBounds){
-            // step the renderer's current bounding box closer to the true box containing all
-            // the nodes. if _screenStep is set to 1 there will be no lag. if _screenStep is
-            // set to 0 the bounding box will remain stationary after being initially set 
-            if (_screenSize===null) return;
-
-            if (newBounds) _boundsTarget = newBounds;
-            else _boundsTarget = that.bounds();
-
-            // _boundsTarget = newBounds || that.bounds()
-            // _boundsTarget.topleft = new Point(_boundsTarget.topleft.x,_boundsTarget.topleft.y)
-            // _boundsTarget.bottomright = new Point(_boundsTarget.bottomright.x,_boundsTarget.bottomright.y)
-
-            var bottomright = new Point(_boundsTarget.bottomright.x, _boundsTarget.bottomright.y);
-            var topleft = new Point(_boundsTarget.topleft.x, _boundsTarget.topleft.y);
-            var dims = bottomright.subtract(topleft);
-            var center = topleft.add(dims.divide(2));
-
-
-            var MINSIZE = 4;                                   // perfect-fit scaling
-            // MINSIZE = Math.max(Math.max(MINSIZE,dims.y), dims.x) // proportional scaling
-
-            var size = new Point(Math.max(dims.x,MINSIZE), Math.max(dims.y,MINSIZE));
-            _boundsTarget.topleft = center.subtract(size.divide(2));
-            _boundsTarget.bottomright = center.add(size.divide(2));
-
-            if (!_bounds){
-                if (isEmpty(state.nodes)) return false;
-                _bounds = _boundsTarget;
-                return true;
-            }
-
-            // var stepSize = (Math.max(dims.x,dims.y)<MINSIZE) ? .2 : _screenStep
-            var stepSize = _screenStep;
-            _newBounds = {
-                bottomright: _bounds.bottomright.add( _boundsTarget.bottomright.subtract(_bounds.bottomright).multiply(stepSize) ),
-                topleft: _bounds.topleft.add( _boundsTarget.topleft.subtract(_bounds.topleft).multiply(stepSize) )
-            };
-
-            // return true if we're still approaching the target, false if we're ‘close enough’
-            var diff = new Point(_bounds.topleft.subtract(_newBounds.topleft).magnitude(), _bounds.bottomright.subtract(_newBounds.bottomright).magnitude());
-            if (diff.x*_screenSize.width>1 || diff.y*_screenSize.height>1){
-                _bounds = _newBounds;
-                return true;
-            }
-            else{
-                return false;        
-            }
-        },
-
-        energy:function(){
-            return _energy;
-        },
-
-        bounds:function(){
-            //  TL   -1
-            //     -1   1
-            //        1   BR
-            var bottomright = null
-            var topleft = null
-
-            // find the true x/y range of the nodes
-            forEach(state.nodes, function(node){
-                if (!bottomright){
-                    bottomright = new Point(node._p)
-                    topleft = new Point(node._p)
-                    return
-                }
-
-                var point = node._p
-                if (point.x===null || point.y===null) return
-                if (point.x > bottomright.x) bottomright.x = point.x;
-                if (point.y > bottomright.y) bottomright.y = point.y;          
-                if   (point.x < topleft.x)   topleft.x = point.x;
-                if   (point.y < topleft.y)   topleft.y = point.y;
-            })
-
-
-            // return the true range then let to/fromScreen handle the padding
-            if (bottomright && topleft){
-                return {bottomright: bottomright, topleft: topleft}
-            }else{
-                return {topleft: new Point(-1,-1), bottomright: new Point(1,1)};
-            }
-        },
-
-        // Find the nearest node to a particular position
-        nearest:function(pos){
-            if (_screenSize!==null) pos = that.fromScreen(pos)
-            // if screen size has been specified, presume pos is in screen pixel
-            // units and convert it back to the particle system coordinates
-
-            var min = {node: null, point: null, distance: null};
-            var t = that;
-
-            forEach(state.nodes, function(node){
-                var pt = node._p;
-                if (pt.x===null || pt.y===null) return;
-                var distance = pt.subtract(pos).magnitude();
-                if (min.distance === null || distance < min.distance){
-                    min = {node: node, point: pt, distance: distance};
-                    if (_screenSize!==null) min.screenPoint = that.toScreen(pt);
-                }
-            });
-
-            if (min.node){
-                if (_screenSize!==null) min.distance = that.toScreen(min.node.p).subtract(that.toScreen(pos)).magnitude();
-                return min;
-            }
-            else{
-                return null;
-            }
-        },
-
-        _notify:function() {
-            // pass on graph changes to the physics object in the worker thread
-            // (using a short timeout to batch changes)
-            if (_notification===null) _epoch++
-            else clearTimeout(_notification)
-
-            _notification = setTimeout(that._synchronize,20)
-            // that._synchronize()
-        },
-
-        _synchronize:function(){
-            if (_changes.length>0){
-                state.kernel.graphChanged(_changes)
-                _changes = []
-                _notification = null
-            }
-        }
-    }    
-
-    state.kernel = Kernel(that);
-    state.tween = state.kernel.tween || null;
-
-    // some magic attrs to make the Node objects phone-home their physics-relevant changes
-    Node.prototype.__defineGetter__("p", function() { 
-        var self = this;
-        var roboPoint = {};
-        roboPoint.__defineGetter__('x', function(){ return self._p.x; });
-        roboPoint.__defineSetter__('x', function(newX){ state.kernel.particleModified(self._id, {x:newX}) });
-        roboPoint.__defineGetter__('y', function(){ return self._p.y; });
-        roboPoint.__defineSetter__('y', function(newY){ state.kernel.particleModified(self._id, {y:newY}) });
-        roboPoint.__proto__ = Point.prototype;
-        return roboPoint;
-    });
-    Node.prototype.__defineSetter__("p", function(newP) { 
-        this._p.x = newP.x;
-        this._p.y = newP.y;
-        state.kernel.particleModified(this._id, {x:newP.x, y:newP.y});
-    });
-
-    Node.prototype.__defineGetter__("mass", function() { return this._mass; });
-    Node.prototype.__defineSetter__("mass", function(newM) { 
-        this._mass = newM;
-        state.kernel.particleModified(this._id, {m:newM});
-    });
-
-    Node.prototype.__defineSetter__("tempMass", function(newM) { 
-        state.kernel.particleModified(this._id, {_m:newM});
-    });
-
-    Node.prototype.__defineGetter__("fixed", function() { return this._fixed; });
-    Node.prototype.__defineSetter__("fixed", function(isFixed) { 
-        this._fixed = isFixed;
-        state.kernel.particleModified(this._id, {f:isFixed?1:0});
-    });
-
-    return that;
+import Tween from '../tween/tween.js';
+import PhysicsWorker from './worker.js?worker&inline';
+import stepPhysics from './physics.js';
+import { Edge, Node, Point } from './atoms.js';
+
+const DEFAULTS = {
+    repulsion: 1000,
+    stiffness: 600,
+    friction: 0.5,
+    gravity: false,
+    fps: 50,
+    dt: 0.02,
+    precision: 0.6,
+    integrator: 'verlet',
+    worker: 'auto'
+};
+
+function isNode(value) {
+    return value instanceof Node || (value && Number.isInteger(value._id));
 }
 
+function graphData(data = {}) {
+    const copy = { ...data };
+    delete copy.x;
+    delete copy.y;
+    delete copy.mass;
+    delete copy.fixed;
+    delete copy.length;
+    return copy;
+}
+
+function normalizeParameters(parameters) {
+    const result = { ...parameters };
+    if (result.targetFps !== undefined && result.fps === undefined) result.fps = result.targetFps;
+    if (result.timeout !== undefined && result.fps === undefined) {
+        const timeout = Number(result.timeout);
+        if (!Number.isFinite(timeout) || timeout <= 0) throw new RangeError('timeout must be a positive number.');
+        result.fps = 1000 / timeout;
+    }
+    delete result.targetFps;
+    delete result.timeout;
+    for (const key of ['repulsion', 'stiffness', 'friction', 'fps', 'dt', 'precision']) {
+        if (result[key] === undefined) continue;
+        const value = Number(result[key]);
+        if (!Number.isFinite(value)) throw new TypeError(`${key} must be a finite number.`);
+        result[key] = value;
+    }
+    if (result.repulsion < 0 || result.stiffness < 0) {
+        throw new RangeError('repulsion and stiffness must not be negative.');
+    }
+    if (result.fps <= 0 || result.dt <= 0) throw new RangeError('fps and dt must be positive.');
+    if (result.friction < 0 || result.friction > 1) {
+        throw new RangeError('friction must be between 0 and 1.');
+    }
+    if (result.precision !== undefined) result.precision = Math.min(1, Math.max(0, result.precision));
+    if (result.integrator !== undefined && !['verlet', 'euler'].includes(result.integrator)) {
+        throw new RangeError('integrator must be "verlet" or "euler".');
+    }
+    if (result.worker !== undefined && ![true, false, 'auto'].includes(result.worker)) {
+        throw new TypeError('worker must be true, false, or "auto".');
+    }
+    return result;
+}
+
+class ParticleSystemCore {
+    constructor(...args) {
+        let options = {};
+        if (args.length === 1 && args[0] && typeof args[0] === 'object') {
+            options = { ...args[0] };
+        } else {
+            const [repulsion, stiffness, friction, gravity, fps, dt, precision, integrator] = args;
+            options = { repulsion, stiffness, friction, gravity, fps, dt, precision, integrator };
+        }
+        Object.keys(options).forEach((key) => {
+            if (options[key] === undefined) delete options[key];
+        });
+        this._parameters = normalizeParameters({ ...DEFAULTS, ...options });
+        this._parameters.fps = Math.max(1, this._parameters.fps);
+        this._parameters.dt = Math.max(0.001, this._parameters.dt);
+        this._parameters.integrator = ['verlet', 'euler'].includes(this._parameters.integrator)
+            ? this._parameters.integrator
+            : 'verlet';
+
+        this.nodes = Object.create(null);
+        this.edges = Object.create(null);
+        this.names = Object.create(null);
+        this.adjacency = Object.create(null);
+        this.renderer = null;
+        this._attachedRenderer = null;
+        this.tween = Tween();
+        this._particles = [];
+        this._springs = [];
+        this._screenSize = null;
+        this._screenPadding = [20, 20, 20, 20];
+        this._screenStep = 0.04;
+        this._bounds = null;
+        this._boundsTarget = null;
+        this._energy = { sum: 0, max: 0, mean: 0, n: 0 };
+        this._epoch = 0;
+        this._frame = null;
+        this._worker = null;
+        this._workerFailed = false;
+        this._workerGeometry = null;
+        this._destroyed = false;
+        this._paused = false;
+        this._settledAt = null;
+        this._frameTimes = [];
+        this.onError = typeof options.onError === 'function' ? options.onError : (error) => {
+            if (typeof console !== 'undefined' && console.error) console.error(error);
+        };
+        this._lastFrame = 0;
+        this._lastPhysics = 0;
+        this._batching = false;
+    }
+
+    parameters(update) {
+        if (update === undefined) return { ...this._parameters, timeout: 1000 / this._parameters.fps };
+        const next = normalizeParameters(update);
+        if (next.fps !== undefined) next.fps = Math.max(1, next.fps);
+        if (next.dt !== undefined) next.dt = Math.max(0.001, next.dt);
+        Object.assign(this._parameters, next);
+        if (this._worker) this._worker.postMessage({ type: 'parameters', parameters: this._physicsParameters() });
+        this._wake();
+        return this._parameters;
+    }
+
+    fps(value) {
+        if (value === undefined) return this._frameTimes.length
+            ? Math.round(1000 / (this._frameTimes.reduce((sum, time) => sum + time, 0) / this._frameTimes.length))
+            : 0;
+        this.parameters({ fps: value });
+        return this;
+    }
+
+    start() {
+        if (this._destroyed) throw new Error('Cannot start a destroyed ParticleSystem.');
+        this._paused = false;
+        if (!this._worker && !this._workerFailed) this._createWorker();
+        if (this._worker) this._worker.postMessage({ type: 'start' });
+        if (this._frame === null) this._scheduleFrame();
+        return this;
+    }
+
+    stop() {
+        this._paused = true;
+        if (this._worker) this._worker.postMessage({ type: 'stop' });
+        if (this._frame !== null) {
+            if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._frame);
+            else clearTimeout(this._frame);
+            this._frame = null;
+        }
+        return this;
+    }
+
+    destroy() {
+        this.stop();
+        this._destroyed = true;
+        if (this._worker) {
+            this._worker.postMessage({ type: 'destroy' });
+            this._worker.terminate();
+            this._worker = null;
+        }
+        if (this.renderer && typeof this.renderer.destroy === 'function') this.renderer.destroy();
+        this.renderer = null;
+        this._attachedRenderer = null;
+    }
+
+    addNode(name, data = {}) {
+        if (name === undefined || name === null) throw new TypeError('A node name is required.');
+        const key = String(name);
+        const prior = this.names[key];
+        if (prior) {
+            this._setNodeData(prior, data);
+            return prior;
+        }
+        const node = new Node(key, data, (changedNode, change) => this._nodeChanged(changedNode, change));
+        node._particle = {
+            id: node._id,
+            x: node.p.x,
+            y: node.p.y,
+            vx: 0,
+            vy: 0,
+            mass: node.mass,
+            fixed: node.fixed,
+            tempMass: null
+        };
+        this.names[key] = node;
+        this.nodes[node._id] = node;
+        this.adjacency[node._id] = Object.create(null);
+        this._particles.push(node._particle);
+        this._changedGraph();
+        return node;
+    }
+
+    getNode(value) {
+        if (value === undefined || value === null) return undefined;
+        if (isNode(value)) return this.nodes[value._id] ? value : undefined;
+        return this.names[String(value)];
+    }
+
+    pruneNode(value) {
+        return this._batch(() => {
+            const node = this.getNode(value);
+            if (!node) return undefined;
+            for (const edge of Object.values(this.edges)) {
+                if (edge.source === node || edge.target === node) this.pruneEdge(edge);
+            }
+            delete this.nodes[node._id];
+            delete this.names[node.name];
+            delete this.adjacency[node._id];
+            this._particles = this._particles.filter((particle) => particle.id !== node._id);
+            this._changedGraph();
+            return node;
+        });
+    }
+
+    addEdge(source, target, data = {}) {
+        return this._batch(() => {
+            const sourceNode = this.getNode(source) || this.addNode(source);
+            const targetNode = this.getNode(target) || this.addNode(target);
+            const existing = this.getEdges(sourceNode, targetNode)[0];
+            if (existing) {
+                existing.data = graphData(data);
+                if (Number.isFinite(data.length)) existing.length = data.length;
+                this._changedGraph();
+                return existing;
+            }
+            const edge = new Edge(sourceNode, targetNode, data);
+            this.edges[edge._id] = edge;
+            const outgoing = this.adjacency[sourceNode._id];
+            outgoing[targetNode._id] = outgoing[targetNode._id] || [];
+            outgoing[targetNode._id].push(edge);
+            this._springs.push({
+                id: edge._id,
+                source: sourceNode._id,
+                target: targetNode._id,
+                length: edge.length
+            });
+            this._changedGraph();
+            return edge;
+        });
+    }
+
+    pruneEdge(value) {
+        const edge = value && value._id !== undefined ? this.edges[value._id] : undefined;
+        if (!edge) return undefined;
+        delete this.edges[edge._id];
+        const outgoing = this.adjacency[edge.source._id];
+        if (outgoing && outgoing[edge.target._id]) {
+            outgoing[edge.target._id] = outgoing[edge.target._id].filter((item) => item !== edge);
+            if (!outgoing[edge.target._id].length) delete outgoing[edge.target._id];
+        }
+        this._springs = this._springs.filter((spring) => spring.id !== edge._id);
+        this._changedGraph();
+        return edge;
+    }
+
+    getEdges(source, target) {
+        const from = this.getNode(source);
+        const to = this.getNode(target);
+        if (!from || !to) return [];
+        return (this.adjacency[from._id] && this.adjacency[from._id][to._id]) || [];
+    }
+
+    getEdgesFrom(value) {
+        const node = this.getNode(value);
+        if (!node || !this.adjacency[node._id]) return [];
+        return Object.values(this.adjacency[node._id]).flat();
+    }
+
+    getEdgesTo(value) {
+        const node = this.getNode(value);
+        if (!node) return [];
+        return Object.values(this.edges).filter((edge) => edge.target === node);
+    }
+
+    eachNode(callback) {
+        for (const node of Object.values(this.nodes)) {
+            const point = this._screenSize ? this.toScreen(node.p) : node.p;
+            callback.call(this, node, point);
+        }
+    }
+
+    eachEdge(callback) {
+        for (const edge of Object.values(this.edges)) {
+            const from = this._screenSize ? this.toScreen(edge.source.p) : edge.source.p;
+            const to = this._screenSize ? this.toScreen(edge.target.p) : edge.target.p;
+            callback.call(this, edge, from, to);
+        }
+    }
+
+    graft(branch = {}) {
+        return this._batch(() => {
+            const added = { nodes: [], edges: [] };
+            for (const [name, data] of Object.entries(branch.nodes || {})) {
+                const prior = this.getNode(name);
+                if (prior) this._setNodeData(prior, data || {});
+                else added.nodes.push(this.addNode(name, data || {}));
+            }
+            for (const [source, targets] of Object.entries(branch.edges || {})) {
+                for (const [target, data] of Object.entries(targets || {})) {
+                    if (!this.getNode(source)) added.nodes.push(this.addNode(source));
+                    if (!this.getNode(target)) added.nodes.push(this.addNode(target));
+                    const existed = this.getEdges(source, target).length > 0;
+                    const edge = this.addEdge(source, target, data || {});
+                    if (!existed) added.edges.push(edge);
+                }
+            }
+            return { added };
+        });
+    }
+
+    merge(branch = {}) {
+        return this._batch(() => {
+            const nodes = branch.nodes || {};
+            const edges = branch.edges || {};
+            const removed = { nodes: [], edges: [] };
+            for (const edge of Object.values(this.edges)) {
+                if (!edges[edge.source.name] || !Object.hasOwn(edges[edge.source.name], edge.target.name)) {
+                    removed.edges.push(this.pruneEdge(edge));
+                }
+            }
+            for (const node of Object.values(this.nodes)) {
+                if (!Object.hasOwn(nodes, node.name)) removed.nodes.push(this.pruneNode(node));
+            }
+            const { added } = this.graft(branch);
+            return { added, dropped: removed };
+        });
+    }
+
+    prune(callback) {
+        return this._batch(() => {
+            const dropped = { nodes: [], edges: [] };
+            const candidates = Object.values(this.nodes);
+            for (const node of candidates) {
+                const shouldDrop = callback
+                    ? callback.call(this, node, { from: this.getEdgesFrom(node), to: this.getEdgesTo(node) })
+                    : true;
+                if (shouldDrop) {
+                    dropped.nodes.push(node);
+                    dropped.edges.push(...this.getEdgesFrom(node), ...this.getEdgesTo(node));
+                    this.pruneNode(node);
+                }
+            }
+            dropped.edges = [...new Set(dropped.edges)];
+            return { dropped };
+        });
+    }
+
+    screen(options) {
+        if (options === undefined) {
+            return {
+                size: this._screenSize ? { ...this._screenSize } : undefined,
+                padding: [...this._screenPadding],
+                step: this._screenStep
+            };
+        }
+        if (options.size) this.screenSize(options.size.width, options.size.height);
+        if (Number.isFinite(options.step)) this.screenStep(options.step);
+        if (options.padding !== undefined) this.screenPadding(options.padding);
+        return this;
+    }
+
+    screenSize(width, height) {
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width < 0 || height < 0) {
+            throw new TypeError('Screen dimensions must be non-negative finite numbers.');
+        }
+        this._screenSize = { width, height };
+        this._updateBounds();
+        return this;
+    }
+
+    screenPadding(top, right, bottom, left) {
+        let padding;
+        if (Array.isArray(top)) {
+            padding = [...top];
+            if (padding.length === 1) padding = [padding[0], padding[0], padding[0], padding[0]];
+            else if (padding.length === 2) padding = [padding[0], padding[1], padding[0], padding[1]];
+            else if (padding.length === 3) padding = [padding[0], padding[1], padding[2], padding[1]];
+        } else if (right === undefined) {
+            padding = [top, top, top, top];
+        } else if (bottom === undefined) {
+            padding = [top, right, top, right];
+        } else {
+            padding = [top, right, bottom, left === undefined ? right : left];
+        }
+        if (padding.length !== 4 || padding.some((value) => !Number.isFinite(value) || value < 0)) {
+            throw new TypeError('Screen padding must contain four non-negative numbers.');
+        }
+        this._screenPadding = padding;
+        return this;
+    }
+
+    screenStep(value) {
+        if (value === undefined) return this._screenStep;
+        const step = Number(value);
+        if (!Number.isFinite(step)) throw new TypeError('Screen step must be a finite number.');
+        this._screenStep = Math.min(1, Math.max(0, step));
+        return this;
+    }
+
+    toScreen(point) {
+        if (!this._screenSize) return undefined;
+        const bounds = this._bounds || this.bounds();
+        const [top, right, bottom, left] = this._screenPadding;
+        const width = Math.max(bounds.bottomright.x - bounds.topleft.x, 4);
+        const height = Math.max(bounds.bottomright.y - bounds.topleft.y, 4);
+        return new Point(
+            left + (point.x - bounds.topleft.x) / width * Math.max(0, this._screenSize.width - left - right),
+            top + (point.y - bounds.topleft.y) / height * Math.max(0, this._screenSize.height - top - bottom)
+        );
+    }
+
+    fromScreen(point) {
+        if (!this._screenSize) return undefined;
+        const bounds = this._bounds || this.bounds();
+        const [top, right, bottom, left] = this._screenPadding;
+        const width = Math.max(bounds.bottomright.x - bounds.topleft.x, 4);
+        const height = Math.max(bounds.bottomright.y - bounds.topleft.y, 4);
+        const usableWidth = Math.max(1, this._screenSize.width - left - right);
+        const usableHeight = Math.max(1, this._screenSize.height - top - bottom);
+        return new Point(
+            bounds.topleft.x + (point.x - left) / usableWidth * width,
+            bounds.topleft.y + (point.y - top) / usableHeight * height
+        );
+    }
+
+    nearest(point) {
+        const target = this._screenSize ? this.fromScreen(point) : point;
+        let nearest = null;
+        for (const node of Object.values(this.nodes)) {
+            const distance = node.p.subtract(target).magnitude();
+            if (!nearest || distance < nearest.distance) {
+                nearest = { node, point: node.p, distance };
+            }
+        }
+        if (nearest && this._screenSize) {
+            nearest.screenPoint = this.toScreen(nearest.point);
+            nearest.distance = nearest.screenPoint.subtract(point).magnitude();
+        }
+        return nearest;
+    }
+
+    bounds() {
+        const nodes = Object.values(this.nodes);
+        if (!nodes.length) {
+            return { topleft: new Point(-1, -1), bottomright: new Point(1, 1) };
+        }
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+        for (const node of nodes) {
+            minX = Math.min(minX, node.p.x);
+            minY = Math.min(minY, node.p.y);
+            maxX = Math.max(maxX, node.p.x);
+            maxY = Math.max(maxY, node.p.y);
+        }
+        return { topleft: new Point(minX, minY), bottomright: new Point(maxX, maxY) };
+    }
+
+    tweenNode(value, duration, target) {
+        const node = this.getNode(value);
+        if (node) this.tween.to(node, duration, target);
+        this._wake();
+        return this;
+    }
+
+    tweenEdge(a, b, c, d) {
+        const edges = d === undefined
+            ? [a]
+            : this.getEdges(a, b);
+        for (const edge of edges) if (edge && edge._id !== undefined) {
+            this.tween.to(edge, d === undefined ? b : c, d === undefined ? c : d);
+        }
+        this._wake();
+        return this;
+    }
+
+    _updateGeometry(message) {
+        const geometry = message.geometry || [];
+        for (let index = 0; index + 2 < geometry.length; index += 3) {
+            const node = this.nodes[geometry[index]];
+            if (!node) continue;
+            node._p._x = geometry[index + 1];
+            node._p._y = geometry[index + 2];
+            if (node._particle) {
+                node._particle.x = node.p.x;
+                node._particle.y = node.p.y;
+            }
+        }
+        if (message.energy) this._energy = message.energy;
+        if (message.bounds) this._boundsTarget = message.bounds;
+        this._epoch = Math.max(this._epoch, message.epoch || 0);
+    }
+
+    _setNodeData(node, data) {
+        node.data = graphData(data);
+        if (data.mass !== undefined) node.mass = data.mass;
+        if (data.fixed !== undefined) node.fixed = data.fixed;
+        if (Number.isFinite(data.x) || Number.isFinite(data.y)) {
+            node.p = {
+                x: Number.isFinite(data.x) ? data.x : node.p.x,
+                y: Number.isFinite(data.y) ? data.y : node.p.y
+            };
+        }
+        this._changedGraph();
+    }
+
+    _nodeChanged(node, change) {
+        const particle = node._particle;
+        if (!particle) return;
+        if ('x' in change) particle.x = change.x;
+        if ('y' in change) particle.y = change.y;
+        if ('mass' in change) particle.mass = change.mass;
+        if ('fixed' in change) particle.fixed = change.fixed;
+        if ('tempMass' in change) particle.tempMass = change.tempMass;
+        if (!this._batching) {
+            if (this._worker) this._worker.postMessage({ type: 'node', id: node._id, changes: change });
+            this._wake();
+        }
+    }
+
+    _changedGraph() {
+        this._epoch++;
+        if (this._batching) return;
+        if (this._worker) this._syncWorker();
+        this._wake();
+    }
+
+    _batch(callback) {
+        if (this._batching) return callback();
+        this._batching = true;
+        try {
+            return callback();
+        } finally {
+            this._batching = false;
+            if (this._worker) this._syncWorker();
+            this._wake();
+        }
+    }
+
+    _physicsParameters() {
+        const { repulsion, stiffness, friction, gravity, fps, dt, precision, integrator } = this._parameters;
+        return { repulsion, stiffness, friction, gravity, fps, dt, precision, integrator };
+    }
+
+    _workerSnapshot() {
+        return {
+            particles: this._particles.map((particle) => ({ ...particle })),
+            springs: this._springs.map((spring) => ({ ...spring })),
+            parameters: this._physicsParameters(),
+            epoch: this._epoch
+        };
+    }
+
+    _syncWorker() {
+        if (this._worker) this._worker.postMessage({ type: 'sync', ...this._workerSnapshot() });
+    }
+
+    _createWorker() {
+        const workerOption = this._parameters.worker;
+        if (workerOption === false || this._workerFailed || typeof Worker === 'undefined') return;
+        if (typeof window === 'undefined') return;
+        try {
+            this._worker = new PhysicsWorker({ name: 'arbor-physics' });
+            this._worker.addEventListener('message', (event) => {
+                if (event.data.type === 'geometry') {
+                    this._workerGeometry = event.data;
+                } else if (event.data.type === 'error') {
+                    this.onError(new Error(event.data.message));
+                }
+            });
+            this._worker.addEventListener('error', (event) => {
+                this.onError(event.error || new Error(event.message || 'Arbor physics worker failed.'));
+                this._worker.terminate();
+                this._worker = null;
+                this._workerFailed = true;
+                if (!this._paused) this._scheduleFrame();
+            });
+            this._worker.postMessage({ type: 'init', ...this._workerSnapshot() });
+        } catch (error) {
+            this.onError(error);
+            if (this._worker) this._worker.terminate();
+            this._workerFailed = true;
+            this._worker = null;
+        }
+    }
+
+    _wake() {
+        this._settledAt = null;
+        if (!this._paused && this._frame === null && this.renderer) this.start();
+    }
+
+    _scheduleFrame() {
+        if (typeof requestAnimationFrame === 'function') {
+            this._frame = requestAnimationFrame((time) => this._onFrame(time));
+        } else {
+            this._frame = setTimeout(() => this._onFrame(Date.now()), 16);
+        }
+    }
+
+    _onFrame(time) {
+        this._frame = null;
+        if (this._destroyed || this._paused) return;
+        if (this.renderer && this.renderer !== this._attachedRenderer) {
+            if (this._attachedRenderer && typeof this._attachedRenderer.destroy === 'function') {
+                this._attachedRenderer.destroy();
+            }
+            this.renderer.init(this);
+            this._attachedRenderer = this.renderer;
+        }
+        const elapsed = this._lastFrame ? Math.min((time - this._lastFrame) / 1000, 0.05) : this._parameters.dt;
+        this._lastFrame = time;
+        this._frameTimes.push(Math.max(1, elapsed * 1000));
+        if (this._frameTimes.length > 50) this._frameTimes.shift();
+
+        if (this._worker) {
+            if (this._workerGeometry) {
+                this._updateGeometry(this._workerGeometry);
+                this._workerGeometry = null;
+            }
+        } else {
+            if (!this._lastPhysics || time - this._lastPhysics >= 1000 / this._parameters.fps) {
+                this._energy = stepPhysics(this._particles, this._springs, this._parameters, this._parameters.dt);
+                for (const node of Object.values(this.nodes)) {
+                    node._p._x = node._particle.x;
+                    node._p._y = node._particle.y;
+                }
+                this._lastPhysics = time;
+            }
+        }
+        this.tween.tick();
+        this._updateBounds();
+        if (this.renderer) this.renderer.redraw();
+
+        if (this._energy.mean < 0.0005 && this._energy.max < 0.001) {
+            if (this._settledAt === null) this._settledAt = time;
+            if (time - this._settledAt > 800 && !this.tween.busy()) {
+                this.stop();
+                this._lastFrame = 0;
+                return;
+            }
+        } else {
+            this._settledAt = null;
+        }
+        this._scheduleFrame();
+    }
+
+    _updateBounds() {
+        const target = this._boundsTarget || this.bounds();
+        if (!this._bounds) {
+            this._bounds = {
+                topleft: new Point(target.topleft),
+                bottomright: new Point(target.bottomright)
+            };
+            return true;
+        }
+        const step = this._screenStep;
+        let changed = false;
+        for (const key of ['topleft', 'bottomright']) {
+            const current = this._bounds[key];
+            const desired = target[key];
+            const x = current.x + (desired.x - current.x) * step;
+            const y = current.y + (desired.y - current.y) * step;
+            if (Math.abs(x - current.x) > 1e-4 || Math.abs(y - current.y) > 1e-4) changed = true;
+            current._x = x;
+            current._y = y;
+        }
+        return changed;
+    }
+}
+
+function ParticleSystem(...args) {
+    return new ParticleSystemCore(...args);
+}
+
+ParticleSystem.prototype = ParticleSystemCore.prototype;
+ParticleSystem.prototype.constructor = ParticleSystem;
+
+export { Point, Node, Edge, ParticleSystem };
 export default ParticleSystem;

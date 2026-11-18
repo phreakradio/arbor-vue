@@ -148,7 +148,7 @@ const Easing = {
         return c/2*((t-=2)*t*(((s*=(1.525))+1)*t + s) + 2) + b;
     },
     bouncein: function (t, b, c, d) {
-        return c - Easing.bounceOut (d-t, 0, c, d) + b;
+        return c - Easing.bounceout(d-t, 0, c, d) + b;
     },
     bounceout: function (t, b, c, d) {
         if ((t/=d) < (1/2.75)) {
@@ -162,8 +162,8 @@ const Easing = {
         }
     },
     bounceinout: function (t, b, c, d) {
-        if (t < d/2) return Easing.bounceIn (t*2, 0, c, d) * .5 + b;
-        return Easing.bounceOut(t*2-d, 0, c, d) * .5 + c*.5 + b;
+        if (t < d/2) return Easing.bouncein(t*2, 0, c, d) * .5 + b;
+        return Easing.bounceout(t*2-d, 0, c, d) * .5 + c*.5 + b;
     }
 }
 

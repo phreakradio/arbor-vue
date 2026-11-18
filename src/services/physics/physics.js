@@ -1,377 +1,218 @@
-'use strict';
-//
-// physics.js
-//
-// the particle system itself. either run inline or in a worker (see worker.js)
-//
+const MIN_DISTANCE = 1;
+const MAX_SPEED = 1000;
+const DIRECT_REPULSION_LIMIT = 128;
 
-import forEach from 'lodash/forEach';
-import includes from 'lodash/includes';
+function makeTree(particles) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const particle of particles) {
+        minX = Math.min(minX, particle.x);
+        minY = Math.min(minY, particle.y);
+        maxX = Math.max(maxX, particle.x);
+        maxY = Math.max(maxY, particle.y);
+    }
 
-import BarnesHutTree from './barnes-hut';
-import { Particle, Spring, Point } from './atoms';
+    const size = Math.max(maxX - minX, maxY - minY, 1);
+    const root = { x: minX, y: minY, size, particles, children: null };
 
-var Physics = function(dt, stiffness, repulsion, friction, updateFn, integrator){
-    var bhTree = BarnesHutTree(); // for computing particle repulsion
-    var active = {particles:{}, springs:{}};
-    var free = {particles:{}};
-    var particles = [];
-    var springs = [];
-    var _epoch=0;
-    var _energy = {sum:0, max:0, mean:0};
-    var _bounds = {topleft:new Point(-1,-1), bottomright:new Point(1,1)};
+    function subdivide(cell, depth) {
+        if (cell.particles.length <= 1 || depth >= 24 || cell.size < 1e-8) return;
+        const half = cell.size / 2;
+        const buckets = [[], [], [], []];
+        for (const particle of cell.particles) {
+            const east = particle.x >= cell.x + half ? 1 : 0;
+            const south = particle.y >= cell.y + half ? 2 : 0;
+            buckets[east + south].push(particle);
+        }
+        if (buckets.some((bucket) => bucket.length === cell.particles.length)) return;
+        cell.children = buckets.map((bucket, index) => {
+            const child = {
+                x: cell.x + (index % 2 ? half : 0),
+                y: cell.y + (index > 1 ? half : 0),
+                size: half,
+                particles: bucket,
+                children: null
+            };
+            if (bucket.length > 1) subdivide(child, depth + 1);
+            return child;
+        });
+        cell.particles = null;
+    }
 
-    var SPEED_LIMIT = 1000; // the max particle velocity per tick
+    subdivide(root, 0);
 
-    var that = {
-        integrator:['verlet','euler'].indexOf(integrator)>=0 ? integrator : 'verlet',
+    function summarize(cell) {
+        if (cell.children) {
+            cell.mass = 0;
+            cell.cx = 0;
+            cell.cy = 0;
+            for (const child of cell.children) {
+                summarize(child);
+                cell.mass += child.mass;
+                cell.cx += child.cx * child.mass;
+                cell.cy += child.cy * child.mass;
+            }
+        } else {
+            cell.mass = 0;
+            cell.cx = 0;
+            cell.cy = 0;
+            for (const particle of cell.particles) {
+                cell.mass += particle.mass;
+                cell.cx += particle.x * particle.mass;
+                cell.cy += particle.y * particle.mass;
+            }
+        }
+        if (cell.mass) {
+            cell.cx /= cell.mass;
+            cell.cy /= cell.mass;
+        }
+    }
+    summarize(root);
+    return root;
+}
 
-        stiffness:(stiffness!==undefined) ? stiffness : 1000,
-        
-        repulsion:(repulsion!==undefined)? repulsion : 600,
-        
-        friction:(friction!==undefined)? friction : .3,
-        
-        gravity:false,
-        
-        dt:(dt!==undefined)? dt : 0.02,
-        
-        theta:.4, // the criterion value for the barnes-hut s/d calculation
+function addRepulsion(target, sourceX, sourceY, sourceMass, repulsion) {
+    let dx = target.x - sourceX;
+    let dy = target.y - sourceY;
+    let distanceSquared = dx * dx + dy * dy;
+    if (distanceSquared < MIN_DISTANCE * MIN_DISTANCE) {
+        if (distanceSquared === 0) {
+            dx = target.id % 2 ? 0.01 : -0.01;
+            dy = target.id % 3 ? 0.01 : -0.01;
+        }
+        distanceSquared = Math.max(dx * dx + dy * dy, MIN_DISTANCE * MIN_DISTANCE);
+    }
+    const scale = repulsion * sourceMass / (distanceSquared * Math.sqrt(distanceSquared) * target.mass);
+    target.fx += dx * scale;
+    target.fy += dy * scale;
+}
 
-        init:function(){
-            return that;
-        },
+function contains(cell, particle) {
+    return particle.x >= cell.x && particle.x <= cell.x + cell.size &&
+        particle.y >= cell.y && particle.y <= cell.y + cell.size;
+}
 
-        modifyPhysics:function(param){
-            forEach(['stiffness','repulsion','friction','gravity','dt','precision', 'integrator'], (p) => {
-                if (param[p]!==undefined){
-                    if (p=='precision'){
-                        that.theta = 1-param[p];
-                        return;
-                    }
-                    that[p] = param[p];
+function applyTreeForce(target, cell, repulsion, theta) {
+    if (!cell || !cell.mass) return;
+    if (!cell.children) {
+        for (const other of cell.particles) {
+            if (other !== target) addRepulsion(target, other.x, other.y, other.mass, repulsion);
+        }
+        return;
+    }
+    const dx = target.x - cell.cx;
+    const dy = target.y - cell.cy;
+    const distance = Math.max(Math.hypot(dx, dy), MIN_DISTANCE);
+    if (!contains(cell, target) && cell.size / distance < theta) {
+        addRepulsion(target, cell.cx, cell.cy, cell.mass, repulsion);
+        return;
+    }
+    for (const child of cell.children) applyTreeForce(target, child, repulsion, theta);
+}
 
-                    if (p=='stiffness'){
-                        var stiff=param[p];
-                        forEach(active.springs, (spring) => {
-                            spring.k = stiff
-                        });
-                    }
-                }
-            });
-        },
+export function stepPhysics(particles, springs, parameters, dt = parameters.dt) {
+    const repulsion = Math.max(0, parameters.repulsion || 0);
+    const stiffness = Math.max(0, parameters.stiffness || 0);
+    const friction = Math.min(1, Math.max(0, parameters.friction ?? 0.5));
+    const theta = Math.max(0.1, 1 - (parameters.precision ?? 0.6));
 
-        addNode:function(c){
-            var id = c.id;
-            var mass = c.m;
+    for (const particle of particles) {
+        particle.fx = 0;
+        particle.fy = 0;
+    }
 
-            var w = _bounds.bottomright.x - _bounds.topleft.x;
-            var h = _bounds.bottomright.y - _bounds.topleft.y;
-            var randomish_pt = new Point((c.x != null) ? c.x: _bounds.topleft.x + w*Math.random(),
-                                 (c.y != null) ? c.y: _bounds.topleft.y + h*Math.random());
-
-
-            active.particles[id] = new Particle(randomish_pt, mass);
-            active.particles[id].connections = 0;
-            active.particles[id].fixed = (c.f===1);
-            free.particles[id] = active.particles[id];
-            particles.push(active.particles[id]);  
-        },
-
-        dropNode:function(c){
-            var id = c.id;
-            var dropping = active.particles[id];
-            var idx = includes(dropping, particles);
-            if (idx) particles.splice(idx,1);
-            delete active.particles[id];
-            delete free.particles[id];
-        },
-
-        modifyNode:function(id, mods){
-            if (id in active.particles){
-                var pt = active.particles[id]
-                if ('x' in mods) pt.p.x = mods.x
-                if ('y' in mods) pt.p.y = mods.y
-                if ('m' in mods) pt.m = mods.m
-                if ('f' in mods) pt.fixed = (mods.f===1)
-                if ('_m' in mods){
-                if (pt._m===undefined) pt._m = pt.m
-                    pt.m = mods._m            
+    if (repulsion > 0) {
+        if (particles.length < DIRECT_REPULSION_LIMIT) {
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const a = particles[i];
+                    const b = particles[j];
+                    addRepulsion(a, b.x, b.y, b.mass, repulsion);
+                    addRepulsion(b, a.x, a.y, a.mass, repulsion);
                 }
             }
-        },
-
-        addSpring:function(c){
-            var id = c.id
-            var length = c.l
-            var from = active.particles[c.fm]
-            var to = active.particles[c.to]
-
-            if (from!==undefined && to!==undefined){
-                active.springs[id] = new Spring(from, to, length, that.stiffness)
-                springs.push(active.springs[id])
-
-                from.connections++
-                to.connections++
-
-                delete free.particles[c.fm]
-                delete free.particles[c.to]
-            }
-        },
-
-        dropSpring:function(c){
-            var id = c.id;
-            var dropping = active.springs[id];
-
-            dropping.point1.connections--;
-            dropping.point2.connections--;
-
-            var idx = includes(dropping, springs);
-            if (idx){
-                springs.splice(idx,1);
-            }
-            delete active.springs[id];
-        },
-
-        _update:function(changes){
-            // batch changes phoned in (automatically) by a ParticleSystem
-            _epoch++;
-
-            forEach(changes, (c) => {
-                if (c.t in that) that[c.t](c);
-            });
-            return _epoch;  
-        },
-
-        tick:function(){
-            that.tendParticles()
-            if (that.integrator=='euler'){
-                that.updateForces()
-                that.updateVelocity(that.dt)
-                that.updatePosition(that.dt)
-            }
-            else{
-                // default to verlet
-                that.updateForces();
-                that.cacheForces();           // snapshot f(t)
-                that.updatePosition(that.dt); // update position to x(t + 1)
-                that.updateForces();          // calculate f(t+1)
-                that.updateVelocity(that.dt); // update using f(t) and f(t+1) 
-            }
-            that.tock();
-        },
-
-        tock:function(){
-            var coords = []
-            forEach(active.particles, (pt, id) => {
-                coords.push(id);
-                coords.push(pt.p.x);
-                coords.push(pt.p.y);
-            });
-
-            if (updateFn) updateFn({geometry:coords, epoch:_epoch, energy:_energy, bounds:_bounds})
-        },
-
-        tendParticles:function(){
-            forEach(active.particles, (pt) => {
-                // decay down any of the temporary mass increases that were passed along
-                // by using an {_m:} instead of an {m:} (which is to say via a Node having
-                // its .tempMass attr set)
-                if (pt._m!==undefined){
-                    if (Math.abs(pt.m-pt._m)<1){
-                        pt.m = pt._m;
-                        delete pt._m;
-                    }
-                    else{
-                        pt.m *= .98;
-                    }
-                }
-
-                // zero out the velocity from one tick to the next
-                pt.v.x = pt.v.y = 0;
-            });            
-        },
-
-        // Physics stuff      
-        updateForces:function() {
-            if (that.repulsion>0){
-                if (that.theta>0) that.applyBarnesHutRepulsion()
-                else that.applyBruteForceRepulsion()
-            }
-            if (that.stiffness>0) that.applySprings()
-            that.applyCenterDrift()
-            if (that.gravity) that.applyCenterGravity()
-        },
-
-        cacheForces:function() {
-            // keep a snapshot of the current forces for the verlet integrator
-            forEach(active.particles, (point) => {
-                point._F = point.f;
-            });            
-        },
-
-        applyBruteForceRepulsion:function(){
-            forEach(active.particles, (point1) => {
-                forEach(active.particles, (point2) => {
-                    if (point1 !== point2){
-                        let d = point1.p.subtract(point2.p);
-                        let distance = Math.max(1.0, d.magnitude());
-                        let direction = ((d.magnitude()>0) ? d : Point.random(1)).normalize();
-
-                        // apply force to each end point
-                        // (consult the cached `real' mass value if the mass is being poked to allow
-                        // for repositioning. the poked mass will still be used in .applyforce() so
-                        // all should be well)
-                        point1.applyForce(direction.multiply(that.repulsion*(point2._m||point2.m)*.5)
-                            .divide(distance * distance * 0.5) );
-                        point2.applyForce(direction.multiply(that.repulsion*(point1._m||point1.m)*.5)
-                            .divide(distance * distance * -0.5) );
-                    }
-                })
-            })           
-        },
-
-        applyBarnesHutRepulsion:function(){
-            if (!_bounds.topleft || !_bounds.bottomright) return
-            var bottomright = new Point(_bounds.bottomright)
-            var topleft = new Point(_bounds.topleft)
-
-            // build a barnes-hut tree...
-            bhTree.init(topleft, bottomright, that.theta)        
-            forEach(active.particles, (particle) => {
-                bhTree.insert(particle);
-            });
-
-            // ...and use it to approximate the repulsion forces
-            forEach(active.particles, (particle) => {
-                bhTree.applyForces(particle, that.repulsion);
-            });
-        },
-
-        applySprings:function(){
-            forEach(active.springs, (spring) => {
-                let d = spring.point2.p.subtract(spring.point1.p); // the direction of the spring
-                let displacement = spring.length - d.magnitude(); //Math.max(.1, d.magnitude());
-                let direction = ( (d.magnitude()>0) ? d : Point.random(1) ).normalize();
-
-                // BUG:
-                // since things oscillate wildly for hub nodes, should probably normalize spring
-                // forces by the number of incoming edges for each node. naive normalization 
-                // doesn't work very well though. what's the `right' way to do it?
-
-                // apply force to each end point
-                spring.point1.applyForce(direction.multiply(spring.k * displacement * -0.5));
-                spring.point2.applyForce(direction.multiply(spring.k * displacement * 0.5));
-            });   
-        },
-
-        applyCenterDrift:function(){
-            // find the centroid of all the particles in the system and shift everything
-            // so the cloud is centered over the origin
-            var numParticles = 0
-            var centroid = new Point(0,0)
-            forEach(active.particles, (point) => {
-                centroid.add(point.p);
-                numParticles++;
-            });
-
-            if (numParticles==0) return
-
-            var correction = centroid.divide(-numParticles);
-            forEach(active.particles, (point) => {
-                point.applyForce(correction);
-            });
-        },
-
-        applyCenterGravity:function(){
-            // attract each node to the origin
-            forEach(active.particles, (point) => {
-                let direction = point.p.multiply(-1.0);
-                point.applyForce(direction.multiply(that.repulsion / 100.0));
-            });
-        },
-
-        updateVelocity:function(timestep){
-            // translate forces to a new velocity for this particle
-            var sum=0, max=0, n = 0;
-            forEach(active.particles, (point) => {
-                if (point.fixed){
-                    point.v = new Point(0,0);
-                    point.f = new Point(0,0);
-                    return;
-                }
-
-                if (that.integrator=='euler'){
-                    point.v = point.v.add(point.f.multiply(timestep)).multiply(1-that.friction);
-                }
-                else{
-                    point.v = point.v.add(point.f.add(point._F.divide(point._m)).multiply(timestep*0.5)).multiply(1-that.friction);
-                }
-                point.f.x = point.f.y = 0
-
-                let speed = point.v.magnitude();
-                if (speed>SPEED_LIMIT) point.v = point.v.divide(speed*speed);
-
-                speed = point.v.magnitude();
-                
-                let e = speed*speed;
-                sum += e;
-                max = Math.max(e,max);
-                n++;
-            });
-            _energy = {sum:sum, max:max, mean:sum/n, n:n};
-        },
-
-        updatePosition:function(timestep){
-            // translate velocity to a position delta
-            var bottomright = null;
-            var topleft = null;
-
-            forEach(active.particles, (point) => {
-                // move the node to its new position
-                if (that.integrator=='euler'){
-                    point.p = point.p.add(point.v.multiply(timestep));
-                }
-                else{
-                    //this should follow the equation
-                    //x(t+1) = x(t) + v(t) * timestep + 1/2 * timestep^2 * a(t)
-                    let accel = point.f.multiply(0.5 * timestep * timestep).divide(point.m);
-                    point.p = point.p.add(point.v.multiply(timestep)).add(accel);
-                }
-
-                if (!bottomright){
-                    bottomright = new Point(point.p.x, point.p.y);
-                    topleft = new Point(point.p.x, point.p.y);
-                    return;
-                }
-
-                let pt = point.p;
-                if (pt.x===null || pt.y===null) return;
-                if (pt.x > bottomright.x) bottomright.x = pt.x;
-                if (pt.y > bottomright.y) bottomright.y = pt.y;
-                if (pt.x < topleft.x)     topleft.x = pt.x;
-                if (pt.y < topleft.y)     topleft.y = pt.y;
-            });
-
-            _bounds = {topleft:topleft||new Point(-1,-1), bottomright:bottomright||new Point(1,1)};
-        },
-
-        systemEnergy:function(){
-            // system stats
-            return _energy;
+        } else {
+            const tree = makeTree(particles);
+            for (const particle of particles) applyTreeForce(particle, tree, repulsion, theta);
         }
     }
 
-    return that.init();
+    const byId = new Map(particles.map((particle) => [particle.id, particle]));
+    for (const spring of springs) {
+        const a = byId.get(spring.source);
+        const b = byId.get(spring.target);
+        if (!a || !b || stiffness === 0) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distance = Math.max(Math.hypot(dx, dy), 1e-9);
+        const force = (distance - spring.length) * stiffness * 0.5;
+        const fx = dx / distance * force;
+        const fy = dy / distance * force;
+        a.fx += fx / a.mass;
+        a.fy += fy / a.mass;
+        b.fx -= fx / b.mass;
+        b.fy -= fy / b.mass;
+    }
+
+    if (particles.length) {
+        let centerX = 0;
+        let centerY = 0;
+        for (const particle of particles) {
+            centerX += particle.x;
+            centerY += particle.y;
+        }
+        centerX /= particles.length;
+        centerY /= particles.length;
+        const gravityStrength = repulsion / 100;
+        for (const particle of particles) {
+            particle.fx -= centerX / particles.length / particle.mass;
+            particle.fy -= centerY / particles.length / particle.mass;
+            if (parameters.gravity) {
+                particle.fx -= particle.x * gravityStrength / particle.mass;
+                particle.fy -= particle.y * gravityStrength / particle.mass;
+            }
+        }
+    }
+
+    let energy = 0;
+    let maxEnergy = 0;
+    for (const particle of particles) {
+        if (particle.fixed) {
+            particle.vx = 0;
+            particle.vy = 0;
+            continue;
+        }
+        const tempMass = particle.tempMass || particle.mass;
+        const accelerationX = particle.fx / tempMass;
+        const accelerationY = particle.fy / tempMass;
+        particle.vx = (particle.vx + accelerationX * dt) * (1 - friction);
+        particle.vy = (particle.vy + accelerationY * dt) * (1 - friction);
+        const speed = Math.hypot(particle.vx, particle.vy);
+        if (speed > MAX_SPEED) {
+            particle.vx = particle.vx / speed * MAX_SPEED;
+            particle.vy = particle.vy / speed * MAX_SPEED;
+        }
+        if (particle.tempMass && Math.abs(particle.mass - particle.tempMass) < 1) {
+            particle.tempMass = null;
+        } else if (particle.tempMass) {
+            particle.tempMass *= 0.98;
+        }
+        const verletOffset = parameters.integrator === 'euler' ? 0 : 0.5;
+        particle.x += particle.vx * dt + accelerationX * dt * dt * verletOffset;
+        particle.y += particle.vy * dt + accelerationY * dt * dt * verletOffset;
+        const particleEnergy = particle.vx * particle.vx + particle.vy * particle.vy;
+        energy += particleEnergy;
+        maxEnergy = Math.max(maxEnergy, particleEnergy);
+    }
+
+    return {
+        mean: particles.length ? energy / particles.length : 0,
+        max: maxEnergy,
+        sum: energy,
+        n: particles.length
+    };
 }
 
-export default Physics;
-
-// var _nearParticle = function(center_pt, r){
-//     var r = r || .0
-//     var x = center_pt.x
-//     var y = center_pt.y
-//     var d = r*2
-//     return new Point(x-r+Math.random()*d, y-r+Math.random()*d)
-// }
-
+export default stepPhysics;

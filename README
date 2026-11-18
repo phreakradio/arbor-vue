@@ -1,75 +1,145 @@
-arbor.js
---------
+arbor-vue
+=========
 
-Arbor is a graph visualization library built with web workers and
-jQuery. Rather than trying to be an all-encompassing framework, arbor
-provides an efficient, force-directed layout algorithm plus
-abstractions for graph organization and screen refresh handling.
+A Vue 3 component and graph-layout library inspired by the original Arbor.js.
+It preserves the named-node/edge graph model, graft/merge/prune operations,
+force-directed layout, canvas renderer, coordinate helpers, dragging, and
+node/edge data tweens. Vue is a peer dependency and is not bundled.
 
-It leaves the actual screen-drawing to you. This means you can use it
-with canvas, SVG, or even positioned HTML elements; whatever display
-approach is appropriate for your project and your performance needs.
+## Install
 
-As a result, the code you write with it can be focused on the things
-that make your project unique – the graph data and your visual style
-– rather than spending time on the physics math that makes the
-layouts possible.
+```sh
+npm install arbor-vue vue
+```
 
-Installation
-------------
+Requires Vue 3.5 or later.
 
-To use the particle system, add jquery and the file at lib/arbor.js
-to your path somewhere and include them in your html:
+## Vue component
 
-  <script src="path/to/jquery.min.js"></script>
-  <script src="path/to/arbor.js"></script>  
+Register the component globally:
 
-If you want to let arbor handle realtime color and value tweens for
-you, include the arbor-tween.js file as well. This will add a pair of
-new tweening methods to the ParticleSystem object (see the docs to
-decide if this appeals to you or not).
+```js
+import { createApp } from 'vue'
+import ArborVuePlugin from 'arbor-vue'
+import 'arbor-vue/style.css'
+import App from './App.vue'
 
-  <script src="path/to/jquery.min.js"></script>
-  <script src="path/to/arbor.js"></script>
-  <script src="path/to/arbor-tween.js"></script>
+createApp(App).use(ArborVuePlugin).mount('#app')
+```
 
+Or import it locally:
 
-Getting Started
----------------
+```vue
+<script setup>
+import { ArborVue } from 'arbor-vue'
+import 'arbor-vue/style.css'
 
-The docs folder contains a sample project that demonstrates some of the
-basic idioms for working with the library to build a visualization. More
-detailed documentation can be found at http://arborjs.org/reference.
+const physics = { stiffness: 600, repulsion: 800, gravity: false }
+const graph = {
+  nodes: {
+    arbor: { color: '#315b7d', label: 'Arbor', radius: 24 },
+    vue: { color: '#42b883', label: 'Vue', radius: 18 }
+  },
+  edges: { arbor: { vue: { length: 1.5 } } }
+}
+</script>
 
-In addition, the demos folder contains standalone versions of the demos
-at arborjs.org. But since all of them use xhr to fetch their data, you'll 
-still need to view them from an http server. If you don't have a copy of
-apache handy, use the demo-server.sh script to create a local server.
+<template>
+  <ArborVue
+    :system-parms="physics"
+    :particle-parms="graph"
+    :width="800"
+    :height="500"
+    :worker="true"
+    @node-click="({ node }) => console.log(node.name)"
+    @navigate="({ link }) => console.log('Navigation requested:', link)"
+  />
+</template>
+```
 
-Colophon
---------
+`systemParms` and `particleParms` retain the names used by the initial Vue
+prototype. `particleParms` uses Arbor's branch shape:
 
-Arbor’s design is heavily influenced by Jeffrey Bernstein’s excellent
-Traer Physics[1] library for Processing. In addition, much of the
-physics code has been adapted from Dennis Hotson’s springy.js[2]. The
-Barnes-Hut n-body implementation is based on Tom Ventimiglia and Kevin 
-Wayne’s vivid description[3] of the algorithm.
+```js
+{
+  nodes: { nodeName: { color: 'steelblue', label: 'Node' } },
+  edges: { nodeName: { otherNodeName: { length: 1.2 } } }
+}
+```
 
-Thanks to all for releasing such elegantly simple and comprehensible
-code.
+The graph is grafted at mount. Later deep changes to `particleParms` are
+reconciled as a complete branch: absent nodes and edges are removed, retained
+nodes/edges are updated, and new ones are added. Deep changes to
+`systemParms` update physics parameters. Node physics attributes are `x`, `y`,
+`mass`, and `fixed`; other node properties remain available in `node.data`.
+The edge `length` attribute sets spring rest length; other edge fields are
+available in `edge.data`.
 
-[1] <http://murderandcreate.com/physics/>
-[2] <https://github.com/dhotson/springy>
-[3] <http://arborjs.org/docs/barnes-hut>
+The component emits:
 
-Contribute
-----------
+* `ready(system)` after initialization;
+* `node-click({ node, event, system })` after a node click;
+* `navigate({ node, link, event })` when the clicked node has a `link` field.
+  Navigation is emitted rather than performed automatically;
+* `error(error)` for worker or runtime errors.
 
-Code submissions are greatly appreciated and highly encouraged. Please send
-pull requests with fixes/enhancements/etc. to samizdatco on github. The 
-oldschool may also pipe their diff -u output to info@arborjs.org.
+The component owns and destroys its `ParticleSystem`, canvas listeners,
+resize observer, animation frame, and worker. `width` defaults to `100%` and
+`height` defaults to `400` pixels. Pass CSS-compatible strings or numbers.
+Import the stylesheet to enable touch-friendly pointer dragging.
 
-License
--------
+## ParticleSystem API
 
-Arbor is released under the MIT license. http://en.wikipedia.org/wiki/MIT_License
+The graph and simulation can also be used without the Vue component:
+
+```js
+import { ParticleSystem } from 'arbor-vue'
+
+const system = ParticleSystem({ worker: 'auto', gravity: true })
+// `new ParticleSystem({...})` is supported too.
+system.addEdge('one', 'two', { length: 1.5 })
+system.addNode('solo', { mass: 0.5 })
+system.renderer = myRenderer // init(system) and redraw() are called by start()
+system.start()
+
+// Later:
+system.stop()
+system.destroy()
+```
+
+`worker` may be `true`, `false`, or `'auto'` (the default). `'auto'` uses a
+module Web Worker where supported and falls back to inline simulation when
+workers are unavailable. The Barnes-Hut quadtree is used for repulsion once a
+graph reaches 128 particles; smaller graphs use direct pair calculations.
+Rendering and pointer handling stay on the main thread.
+The worker is inlined into the ESM bundle; restrictive Content Security
+Policies must allow data-URL workers (`worker-src data:`), or the system will
+report the worker error and use inline simulation.
+
+The API includes `addNode`, `getNode`, `pruneNode`, `addEdge`, `pruneEdge`,
+`getEdges`, `getEdgesFrom`, `getEdgesTo`, `eachNode`, `eachEdge`, `graft`,
+`merge`, `prune`, `parameters`, `fps`, `screen`, `screenSize`,
+`screenPadding`, `screenStep`, `toScreen`, `fromScreen`, `nearest`,
+`tweenNode`, and `tweenEdge`. Node position and physics properties remain
+mutable (`node.p.x`, `node.p.y`, `node.mass`, `node.fixed`, `node.tempMass`).
+
+## Development
+
+```sh
+npm install
+npm run dev
+npm test
+npm run lint
+npm run build
+```
+
+The build produces an ES module package in `dist/`; Vite inlines the worker in
+the package bundle. The package is ESM-only and Vue is externalized as a peer
+dependency.
+
+## Credits and licensing
+
+The graph and physics implementation follows the Arbor.js model. Third-party
+copyright notices and license terms for Arbor.js, Springy.js, and Robert
+Penner's easing equations are included in
+[THIRD-PARTY-NOTICES](./THIRD-PARTY-NOTICES).

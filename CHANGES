@@ -1,3 +1,15 @@
+Arbor Vue Changes
+----------------
+
+Version 1.0.0
+-------------
+
+  * Migrated the package from Vue 2 / Vue CLI to Vue 3.5 / Vite
+  * Added a Vue 3 canvas component with reactive graph and physics props
+  * Restored graph APIs, canvas rendering, dragging, and data tweening
+  * Added Barnes-Hut repulsion and an optional module Web Worker
+  * Added ESM package exports, TypeScript declarations, and automated tests
+
 Arbor.js Changes
 ----------------
 
