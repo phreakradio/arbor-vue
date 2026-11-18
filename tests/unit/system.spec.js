@@ -63,6 +63,76 @@ describe('ParticleSystem graph API', () => {
         expect(system.nearest(screenPoint).node).toBe(a);
     });
 
+    it('chooses the visually nearest node when screen scaling differs by axis', () => {
+        const system = new ParticleSystem({ worker: false });
+        const a = system.addNode('a', { x: 0, y: 1 });
+        const b = system.addNode('b', { x: 1, y: 0 });
+        system.screenSize(1000, 100);
+        system.screenPadding(0);
+        const point = { x: system.toScreen(b.p).x, y: system.toScreen(a.p).y };
+        expect(system.nearest(point).node).toBe(b);
+        system.destroy();
+    });
+
+    it('wakes after settling on parameter and node changes but honors an explicit stop', () => {
+        vi.useFakeTimers();
+        const system = new ParticleSystem({ worker: false, repulsion: 0, stiffness: 0 });
+        const renderer = { init: vi.fn(), redraw: vi.fn(), destroy: vi.fn() };
+        try {
+            system.renderer = renderer;
+            const node = system.addNode('fixed', { x: 0, y: 0, fixed: true });
+            system.start();
+            vi.advanceTimersByTime(1100);
+            expect(system._frame).toBeNull();
+            expect(system._paused).toBe(false);
+
+            const redraws = renderer.redraw.mock.calls.length;
+            system.parameters({ gravity: true });
+            vi.advanceTimersByTime(20);
+            expect(renderer.redraw.mock.calls.length).toBeGreaterThan(redraws);
+
+            vi.advanceTimersByTime(1100);
+            expect(system._frame).toBeNull();
+            node.p = { x: 1, y: 1 };
+            expect(system._frame).not.toBeNull();
+            vi.advanceTimersByTime(20);
+            expect(node.p.x).toBe(1);
+
+            system.stop();
+            system.parameters({ gravity: false });
+            node.p.x = 2;
+            expect(system._frame).toBeNull();
+            expect(system._paused).toBe(true);
+            system.start();
+            expect(system._frame).not.toBeNull();
+        } finally {
+            system.destroy();
+            vi.useRealTimers();
+        }
+    });
+
+    it('ignores worker geometry from before a node or parameter update', () => {
+        const system = new ParticleSystem({ worker: false });
+        const node = system.addNode('dragged', { x: 0, y: 0 });
+        const worker = { postMessage: vi.fn(), terminate: vi.fn() };
+        system._worker = worker;
+        const oldEpoch = system._epoch;
+        node.p = { x: 4, y: 5 };
+        expect(worker.postMessage).toHaveBeenLastCalledWith({
+            type: 'node', id: node._id, changes: { x: 4, y: 5 }, epoch: system._epoch
+        });
+        system._updateGeometry({ epoch: oldEpoch, geometry: [node._id, 0, 0] });
+        expect(node.p.x).toBe(4);
+        expect(node.p.y).toBe(5);
+        const beforeParameters = system._epoch;
+        system.parameters({ gravity: true });
+        system._updateGeometry({ epoch: beforeParameters, geometry: [node._id, 2, 2] });
+        expect(node.p.x).toBe(4);
+        system._updateGeometry({ epoch: system._epoch, geometry: [node._id, 6, 7] });
+        expect(node.p.x).toBe(6);
+        system.destroy();
+    });
+
     it('supports direct position/fixed updates and safe lookups', () => {
         const system = new ParticleSystem({ worker: false });
         const node = system.addNode('moving');

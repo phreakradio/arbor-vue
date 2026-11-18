@@ -41,16 +41,17 @@ self.addEventListener('message', ({ data }) => {
         particles = data.particles;
         springs = data.springs;
         parameters = data.parameters;
-        epoch = data.epoch || 0;
+        epoch = data.epoch ?? 0;
         break;
     case 'sync':
         particles = data.particles;
         springs = data.springs;
-        epoch = data.epoch || epoch;
+        epoch = data.epoch ?? epoch;
         break;
     case 'node': {
         const node = particles.find((particle) => particle.id === data.id);
         if (node) Object.assign(node, data.changes);
+        epoch = data.epoch ?? epoch;
         break;
     }
     case 'parameters':
@@ -58,6 +59,7 @@ self.addEventListener('message', ({ data }) => {
             const wasRunning = interval !== null;
             stop();
             parameters = { ...parameters, ...data.parameters };
+            epoch = data.epoch ?? epoch;
             if (wasRunning) interval = setInterval(tick, 1000 / Math.max(1, parameters.fps || 50));
         }
         break;

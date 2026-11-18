@@ -119,7 +119,10 @@ class ParticleSystemCore {
         if (next.fps !== undefined) next.fps = Math.max(1, next.fps);
         if (next.dt !== undefined) next.dt = Math.max(0.001, next.dt);
         Object.assign(this._parameters, next);
-        if (this._worker) this._worker.postMessage({ type: 'parameters', parameters: this._physicsParameters() });
+        this._epoch++;
+        if (this._worker) this._worker.postMessage({
+            type: 'parameters', parameters: this._physicsParameters(), epoch: this._epoch
+        });
         this._wake();
         return this._parameters;
     }
@@ -426,17 +429,14 @@ class ParticleSystemCore {
     }
 
     nearest(point) {
-        const target = this._screenSize ? this.fromScreen(point) : point;
         let nearest = null;
         for (const node of Object.values(this.nodes)) {
-            const distance = node.p.subtract(target).magnitude();
+            const screenPoint = this._screenSize ? this.toScreen(node.p) : undefined;
+            const distance = (screenPoint || node.p).subtract(point).magnitude();
             if (!nearest || distance < nearest.distance) {
                 nearest = { node, point: node.p, distance };
+                if (screenPoint) nearest.screenPoint = screenPoint;
             }
-        }
-        if (nearest && this._screenSize) {
-            nearest.screenPoint = this.toScreen(nearest.point);
-            nearest.distance = nearest.screenPoint.subtract(point).magnitude();
         }
         return nearest;
     }
@@ -478,6 +478,7 @@ class ParticleSystemCore {
     }
 
     _updateGeometry(message) {
+        if (message.epoch !== undefined && message.epoch < this._epoch) return;
         const geometry = message.geometry || [];
         for (let index = 0; index + 2 < geometry.length; index += 3) {
             const node = this.nodes[geometry[index]];
@@ -515,8 +516,11 @@ class ParticleSystemCore {
         if ('mass' in change) particle.mass = change.mass;
         if ('fixed' in change) particle.fixed = change.fixed;
         if ('tempMass' in change) particle.tempMass = change.tempMass;
+        this._epoch++;
         if (!this._batching) {
-            if (this._worker) this._worker.postMessage({ type: 'node', id: node._id, changes: change });
+            if (this._worker) this._worker.postMessage({
+                type: 'node', id: node._id, changes: change, epoch: this._epoch
+            });
             this._wake();
         }
     }
@@ -576,7 +580,7 @@ class ParticleSystemCore {
                 this._worker.terminate();
                 this._worker = null;
                 this._workerFailed = true;
-                if (!this._paused) this._scheduleFrame();
+                if (!this._paused && this._frame === null) this._scheduleFrame();
             });
             this._worker.postMessage({ type: 'init', ...this._workerSnapshot() });
         } catch (error) {
@@ -637,7 +641,7 @@ class ParticleSystemCore {
         if (this._energy.mean < 0.0005 && this._energy.max < 0.001) {
             if (this._settledAt === null) this._settledAt = time;
             if (time - this._settledAt > 800 && !this.tween.busy()) {
-                this.stop();
+                if (this._worker) this._worker.postMessage({ type: 'stop' });
                 this._lastFrame = 0;
                 return;
             }

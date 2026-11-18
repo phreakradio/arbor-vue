@@ -1,6 +1,13 @@
 Arbor Vue Changes
 ----------------
 
+Unreleased
+----------
+
+  * Wake settled simulations when nodes or physics parameters change
+  * Keep worker updates from overwriting newer node positions
+  * Correct node hit testing on non-square canvases
+
 Version 1.0.0
 -------------
 
