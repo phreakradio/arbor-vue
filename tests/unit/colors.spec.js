@@ -4,6 +4,8 @@ import Colors from '../../src/services/graphics/colors.js';
 describe('Colors', () => {
     it('decodes CSS names, short hex, full hex, and rgba values', () => {
         expect(Colors.decode('white')).toEqual({ r: 255, g: 255, b: 255, a: 1 });
+        expect(Colors.decode('steelblue')).toEqual({ r: 70, g: 130, b: 180, a: 1 });
+        expect(Colors.CSS.rebeccapurple).toBe('#663399');
         expect(Colors.decode('#f00')).toEqual({ r: 255, g: 0, b: 0, a: 1 });
         expect(Colors.decode('#01020380')).toEqual({ r: 1, g: 2, b: 3, a: 128 / 255 });
         expect(Colors.decode('rgba(10,20,30,0.5)')).toEqual({ r: 10, g: 20, b: 30, a: 0.5 });

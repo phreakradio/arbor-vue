@@ -1,12 +1,58 @@
 import { describe, expect, it, vi } from 'vitest';
-import ParticleSystem from '../../src/services/physics/system.js';
+import ParticleSystem, { Point } from '../../src/services/physics/system.js';
 
 describe('ParticleSystem graph API', () => {
+    it('supports callable and constructible points', () => {
+        const point = Point(2, 3);
+        expect(point).toBeInstanceOf(Point);
+        expect(new Point(point).add(Point(1, 1))).toMatchObject({ x: 3, y: 4 });
+        expect(Point.random(0).magnitude()).toBe(0);
+    });
+
+    it('returns energy statistics without exposing mutable internal state', () => {
+        const system = new ParticleSystem({ worker: false });
+        expect(system.energy()).toEqual({ sum: 0, max: 0, mean: 0, n: 0 });
+        system._updateGeometry({ epoch: system._epoch, energy: { sum: 4, max: 3, mean: 2, n: 2 } });
+        const energy = system.energy();
+        energy.sum = 100;
+        expect(system.energy().sum).toBe(4);
+        system.destroy();
+    });
+
+    it('updates spring lengths after direct edits and branch reconciliation', () => {
+        const system = new ParticleSystem({ worker: false });
+        const edge = system.addEdge('a', 'b', { length: 1 });
+        edge.length = 2;
+        expect(system._springs[0].length).toBe(2);
+        system.graft({ edges: { a: { b: { length: 3 } } } });
+        expect(system._springs[0].length).toBe(3);
+        expect(() => { edge.length = 0; }).toThrow(RangeError);
+        system.destroy();
+    });
+
+    it('returns Arbor-compatible prune results', () => {
+        const system = new ParticleSystem({ worker: false });
+        const edge = system.addEdge('a', 'b');
+        const result = system.prune((node) => node.name === 'a');
+        expect(result.dropped.nodes.map((node) => node.name)).toEqual(['a']);
+        expect(result.dropped.edges).toEqual([edge]);
+        system.destroy();
+    });
+
     it('supports Arbor-style calls as well as construction and validates options', () => {
         const system = ParticleSystem({ worker: false });
         expect(system).toBeInstanceOf(ParticleSystem);
         expect(() => new ParticleSystem({ friction: 2 })).toThrow(RangeError);
         system.destroy();
+    });
+
+    it('honors targetFps and timeout aliases at construction', () => {
+        const byRate = ParticleSystem({ worker: false, targetFps: 25 });
+        const byTimeout = ParticleSystem({ worker: false, timeout: 40 });
+        expect(byRate.parameters().fps).toBe(25);
+        expect(byTimeout.parameters().fps).toBe(25);
+        byRate.destroy();
+        byTimeout.destroy();
     });
 
     it('adds named nodes and edges, then removes incident edges with a node', () => {
@@ -111,6 +157,36 @@ describe('ParticleSystem graph API', () => {
         }
     });
 
+    it('does not auto-settle while maximum-friction particles are still moving', () => {
+        vi.useFakeTimers();
+        const system = new ParticleSystem({ worker: false, friction: 1, repulsion: 700, stiffness: 0 });
+        system.renderer = { init: vi.fn(), redraw: vi.fn(), destroy: vi.fn() };
+        try {
+            system.addNode('left', { x: -1, y: 0 });
+            system.addNode('right', { x: 1, y: 0 });
+            system.start();
+            vi.advanceTimersByTime(1200);
+            expect(system.energy().max).toBe(0);
+            expect(system._energy.motion).toBeGreaterThan(0.001);
+            expect(system._frame).not.toBeNull();
+        } finally {
+            system.destroy();
+            vi.useRealTimers();
+        }
+    });
+
+    it('reports and stops an inline simulation that exceeds the substep limit', () => {
+        const onError = vi.fn();
+        const system = new ParticleSystem({ worker: false, stiffness: 1e12, onError });
+        system.renderer = { init: vi.fn(), redraw: vi.fn(), destroy: vi.fn() };
+        system.addEdge('a', 'b');
+        system._onFrame(1);
+        expect(onError).toHaveBeenCalledOnce();
+        expect(onError.mock.calls[0][0].message).toMatch(/too many substeps/);
+        expect(system._paused).toBe(true);
+        system.destroy();
+    });
+
     it('ignores worker geometry from before a node or parameter update', () => {
         const system = new ParticleSystem({ worker: false });
         const node = system.addNode('dragged', { x: 0, y: 0 });
@@ -130,6 +206,41 @@ describe('ParticleSystem graph API', () => {
         expect(node.p.x).toBe(4);
         system._updateGeometry({ epoch: system._epoch, geometry: [node._id, 6, 7] });
         expect(node.p.x).toBe(6);
+        system.destroy();
+    });
+
+    it('updates other nodes during a stream of stale drag updates without moving the dragged node', () => {
+        const system = new ParticleSystem({ worker: false });
+        const dragged = system.addNode('dragged', { x: 0, y: 0 });
+        const neighbor = system.addNode('neighbor', { x: 1, y: 0 });
+        let workerEpoch = system._epoch;
+        for (let frame = 1; frame <= 50; frame++) {
+            dragged.p = { x: frame, y: 0 };
+            system._updateGeometry({
+                epoch: workerEpoch,
+                geometry: [dragged._id, frame - 1, 0, neighbor._id, 1 + frame * 0.1, 0],
+                bounds: { topleft: { x: -100, y: 0 }, bottomright: { x: 100, y: 0 } }
+            });
+            expect(dragged.p.x).toBe(frame);
+            expect(neighbor.p.x).toBeCloseTo(1 + frame * 0.1);
+            expect(system._boundsTarget.bottomright.x).toBe(Math.max(frame, neighbor.p.x));
+            workerEpoch = system._epoch;
+        }
+        system._updateGeometry({
+            epoch: workerEpoch,
+            geometry: [dragged._id, 50, 0, neighbor._id, 6.1, 0]
+        });
+        expect(neighbor.p.x).toBeCloseTo(6.1);
+        system.destroy();
+    });
+
+    it('rejects geometry from before a graph change even for retained nodes', () => {
+        const system = new ParticleSystem({ worker: false });
+        const node = system.addNode('retained', { x: 0, y: 0 });
+        const oldEpoch = system._epoch;
+        system.addNode('new');
+        system._updateGeometry({ epoch: oldEpoch, geometry: [node._id, 9, 9] });
+        expect(node.p.x).toBe(0);
         system.destroy();
     });
 

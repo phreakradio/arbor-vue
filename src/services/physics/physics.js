@@ -1,6 +1,8 @@
 const MIN_DISTANCE = 1;
 const MAX_SPEED = 1000;
 const DIRECT_REPULSION_LIMIT = 128;
+const MAX_SPRING_STEP = 0.75;
+const MAX_SUBSTEPS = 128;
 
 function makeTree(particles) {
     let minX = Infinity;
@@ -113,6 +115,48 @@ function applyTreeForce(target, cell, repulsion, theta) {
 }
 
 export function stepPhysics(particles, springs, parameters, dt = parameters.dt) {
+    const positions = particles.map(({ x, y }) => ({ x, y }));
+    const stiffness = Math.max(0, parameters.stiffness || 0);
+    const byId = new Map(particles.map((particle) => [particle.id, particle]));
+    const degrees = new Map();
+    for (const spring of springs) {
+        if (!byId.has(spring.source) || !byId.has(spring.target)) continue;
+        degrees.set(spring.source, (degrees.get(spring.source) || 0) + 1);
+        degrees.set(spring.target, (degrees.get(spring.target) || 0) + 1);
+    }
+    let maxSpringRate = 0;
+    for (const particle of particles) {
+        if (particle.fixed) continue;
+        const mass = particle.tempMass || particle.mass;
+        maxSpringRate = Math.max(maxSpringRate, stiffness * (degrees.get(particle.id) || 0) / (particle.mass * mass));
+    }
+    const substeps = Math.max(1, Math.ceil(dt * Math.sqrt(maxSpringRate) / MAX_SPRING_STEP));
+    if (substeps > MAX_SUBSTEPS) {
+        throw new RangeError('Physics step requires too many substeps; reduce dt or stiffness, or increase node mass.');
+    }
+    const friction = Math.min(1, Math.max(0, parameters.friction ?? 0.5));
+    const substepParameters = substeps === 1 ? parameters : {
+        ...parameters,
+        friction: 1 - (1 - friction) ** (1 / substeps)
+    };
+    let energy;
+    for (let i = 0; i < substeps; i++) {
+        energy = integratePhysics(particles, springs, byId, substepParameters, dt / substeps);
+    }
+    for (const particle of particles) {
+        if (particle.fixed || !particle.tempMass) continue;
+        if (Math.abs(particle.mass - particle.tempMass) < 1) particle.tempMass = null;
+        else particle.tempMass *= 0.98;
+    }
+    energy.motion = particles.reduce((max, particle, index) => {
+        const dx = (particle.x - positions[index].x) / dt;
+        const dy = (particle.y - positions[index].y) / dt;
+        return Math.max(max, dx * dx + dy * dy);
+    }, 0);
+    return energy;
+}
+
+function integratePhysics(particles, springs, byId, parameters, dt) {
     const repulsion = Math.max(0, parameters.repulsion || 0);
     const stiffness = Math.max(0, parameters.stiffness || 0);
     const friction = Math.min(1, Math.max(0, parameters.friction ?? 0.5));
@@ -139,7 +183,6 @@ export function stepPhysics(particles, springs, parameters, dt = parameters.dt) 
         }
     }
 
-    const byId = new Map(particles.map((particle) => [particle.id, particle]));
     for (const spring of springs) {
         const a = byId.get(spring.source);
         const b = byId.get(spring.target);
@@ -193,11 +236,6 @@ export function stepPhysics(particles, springs, parameters, dt = parameters.dt) 
         if (speed > MAX_SPEED) {
             particle.vx = particle.vx / speed * MAX_SPEED;
             particle.vy = particle.vy / speed * MAX_SPEED;
-        }
-        if (particle.tempMass && Math.abs(particle.mass - particle.tempMass) < 1) {
-            particle.tempMass = null;
-        } else if (particle.tempMass) {
-            particle.tempMass *= 0.98;
         }
         const verletOffset = parameters.integrator === 'euler' ? 0 : 0.5;
         particle.x += particle.vx * dt + accelerationX * dt * dt * verletOffset;

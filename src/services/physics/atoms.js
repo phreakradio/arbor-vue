@@ -1,7 +1,7 @@
 let nextNodeId = 1;
 let nextEdgeId = -1;
 
-export class Point {
+class PointCore {
     constructor(x = 0, y = 0, onChange = null) {
         if (typeof x === 'object' && x !== null) {
             y = x.y;
@@ -39,6 +39,12 @@ export class Point {
         return new Point((Math.random() * 2 - 1) * radius, (Math.random() * 2 - 1) * radius);
     }
 }
+
+export function Point(x = 0, y = 0, onChange = null) {
+    return new PointCore(x, y, onChange);
+}
+Point.prototype = PointCore.prototype;
+Point.random = PointCore.random;
 
 export class Node {
     constructor(name, data = {}, onChange = null) {
@@ -87,13 +93,21 @@ export class Node {
 }
 
 export class Edge {
-    constructor(source, target, data = {}) {
+    constructor(source, target, data = {}, onChange = null) {
         this._id = nextEdgeId--;
         this.source = source;
         this.target = target;
-        this.length = Number.isFinite(data.length) && data.length > 0 ? data.length : 1;
+        this._length = Number.isFinite(data.length) && data.length > 0 ? data.length : 1;
+        this._onChange = onChange;
         this.data = { ...data };
         delete this.data.length;
+    }
+
+    get length() { return this._length; }
+    set length(value) {
+        if (!Number.isFinite(value) || value <= 0) throw new RangeError('Edge length must be a positive number.');
+        this._length = value;
+        if (this._onChange) this._onChange(this);
     }
 }
 

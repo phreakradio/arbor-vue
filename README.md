@@ -7,6 +7,30 @@ node/edge data tweens. Vue is a peer dependency and is not bundled.
 
 [Try the interactive demo](https://phreakradio.github.io/arbor-vue/)
 
+The demo offers a central hub, an interconnected network, and two branching
+tree presets, inspired by the variety of graphs in the original
+[Arbor demos](https://arborjs.org/). The force-directed tree moves freely;
+the hierarchical tree starts with parked nodes arranged in levels. Select a
+parent by tapping or clicking a node, or using the parent selector, before
+adding a branch. Adding a node rearranges the hierarchical tree; dragging or
+unparking a node changes its arrangement. These tree presets are demo
+configurations, not a separate library layout API. The demo's
+100-node limit is a demo safeguard, not a library limit. The settings scroll
+independently of the graph. Drag nodes and adjust the forces to explore the
+layout. Select a node from the menu or click it to change its mass, size, color,
+or park it with `fixed`. A parked node can still be dragged and remains parked
+where it is released. The demo also exposes edge rest length and appearance,
+and advanced physics settings. Switching
+between worker and main-thread simulation restarts the demo layout.
+
+Friction controls how much velocity is damped per physics step: `0` leaves
+velocity undamped, while `1` removes it completely. The demo starts at `0.5`
+and resets to that value. Higher friction generally reduces oscillation.
+
+Gravity attracts each node toward the simulation's origin; it does not attract
+nodes to one another. Repulsion still pushes nearby nodes apart. Automatic
+canvas scaling can make the resulting change in graph size less obvious.
+
 ## Install
 
 ```sh
@@ -87,7 +111,26 @@ The component emits:
 The component owns and destroys its `ParticleSystem`, canvas listeners,
 resize observer, animation frame, and worker. `width` defaults to `100%` and
 `height` defaults to `400` pixels. Pass CSS-compatible strings or numbers.
-Import the stylesheet to enable touch-friendly pointer dragging.
+Import the stylesheet to enable touch-friendly pointer dragging. The viewport
+stays fixed while a node is held, then gradually resumes fitting the graph
+after release; other nodes continue responding to the forces during the drag.
+
+## Mobile and tablet use
+
+The canvas supports pointer-based touch: tap a node to select it or drag it
+with one finger. The demo places its independently scrollable settings below
+the graph on narrow screens and beside it on wider screens. Touches on the
+canvas are reserved for interaction rather than page scrolling; scroll using
+the settings or the area outside the graph. The renderer adjusts to canvas
+resizing and uses device pixel ratio (capped at 3) for sharper rendering.
+
+For responsive embedding, use a flexible width and give the canvas a definite
+height (or a parent with a definite height when using `height="100%"`). The
+fixed 800-pixel width in the example above is illustrative, not mobile-friendly.
+Large or dense graphs may be harder to read or slower on smaller devices; the
+worker moves physics off the main thread, but canvas drawing remains on it.
+The canvas does not currently offer keyboard navigation between individual
+nodes, so provide an accessible alternative when node interaction is essential.
 
 ## ParticleSystem API
 
@@ -108,11 +151,21 @@ system.stop()
 system.destroy()
 ```
 
+Physics options include `repulsion`, `stiffness`, `friction` (0 through 1),
+`gravity`, `fps`, `dt`, `precision`, and `integrator` (`'verlet'` or
+`'euler'`). Set them initially or update them with `system.parameters(...)`;
+the Vue component accepts the same options through `systemParms`. Use
+`system.energy()` to inspect the latest `{ sum, max, mean, n }` statistics.
+
 `worker` may be `true`, `false`, or `'auto'` (the default). `'auto'` uses a
 module Web Worker where supported and falls back to inline simulation when
 workers are unavailable. The Barnes-Hut quadtree is used for repulsion once a
 graph reaches 128 particles; smaller graphs use direct pair calculations.
 Rendering and pointer handling stay on the main thread.
+The solver automatically subdivides a physics step when spring stiffness,
+node connectivity, or low node mass would otherwise make it unstable. If more
+than 128 subdivisions are required, the simulation reports an error instead of
+locking up the browser; reduce `dt` or stiffness, or increase node mass.
 The worker is inlined into the ESM bundle; restrictive Content Security
 Policies must allow data-URL workers (`worker-src data:`), or the system will
 report the worker error and use inline simulation.
@@ -121,8 +174,36 @@ The API includes `addNode`, `getNode`, `pruneNode`, `addEdge`, `pruneEdge`,
 `getEdges`, `getEdgesFrom`, `getEdgesTo`, `eachNode`, `eachEdge`, `graft`,
 `merge`, `prune`, `parameters`, `fps`, `screen`, `screenSize`,
 `screenPadding`, `screenStep`, `toScreen`, `fromScreen`, `nearest`,
-`tweenNode`, and `tweenEdge`. Node position and physics properties remain
+`energy`, `tweenNode`, and `tweenEdge`. Node position and physics properties remain
 mutable (`node.p.x`, `node.p.y`, `node.mass`, `node.fixed`, `node.tempMass`).
+Changing an edge's `length` updates its spring. `Point(x, y)` and
+`new Point(x, y)` are both supported. Tween options accept `easing` or the
+original reference's `ease` spelling.
+
+## Original Arbor compatibility
+
+The original repository's core graph, simulation settings, worker, coordinate,
+and tween APIs are available as ESM exports. The optional `Graphics`, `colors`,
+`Tween`, and `etc` exports provide the original's canvas helper, color,
+animation, and utility entry points. `Graphics` takes a canvas element rather
+than a jQuery selector:
+
+```js
+import { Graphics, colors } from 'arbor-vue'
+
+const graphics = Graphics(document.querySelector('canvas'))
+graphics.fill('steelblue')
+graphics.oval(10, 10, 40, 40)
+console.log(colors.decode('#4682b4'))
+```
+
+The original Halfviz, Atlas, and Echolalia applications and their datasets are
+examples, not part of this package. The built-in renderer is Vue-oriented and
+does not recreate Halfviz's graph text editor or its arrow styling. Simulation
+math and automatic viewport handling are adapted for this port rather than
+being numerically identical to Arbor.js. The `etc.arbor_path()` script lookup is
+for legacy script-tag integrations; ESM applications should not rely on it to
+locate the inlined worker.
 
 ## Development
 

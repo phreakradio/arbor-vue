@@ -7,7 +7,14 @@ let interval = null;
 let epoch = 0;
 
 function tick() {
-    const energy = stepPhysics(particles, springs, parameters);
+    let energy;
+    try {
+        energy = stepPhysics(particles, springs, parameters);
+    } catch (error) {
+        stop();
+        self.postMessage({ type: 'error', message: error.message || String(error) });
+        return;
+    }
     const geometry = new Float64Array(particles.length * 3);
     let minX = Infinity;
     let minY = Infinity;

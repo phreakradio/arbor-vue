@@ -74,7 +74,7 @@ class ParticleSystemCore {
         Object.keys(options).forEach((key) => {
             if (options[key] === undefined) delete options[key];
         });
-        this._parameters = normalizeParameters({ ...DEFAULTS, ...options });
+        this._parameters = { ...DEFAULTS, ...normalizeParameters(options) };
         this._parameters.fps = Math.max(1, this._parameters.fps);
         this._parameters.dt = Math.max(0.001, this._parameters.dt);
         this._parameters.integrator = ['verlet', 'euler'].includes(this._parameters.integrator)
@@ -95,8 +95,10 @@ class ParticleSystemCore {
         this._screenStep = 0.04;
         this._bounds = null;
         this._boundsTarget = null;
+        this._boundsLocked = false;
         this._energy = { sum: 0, max: 0, mean: 0, n: 0 };
         this._epoch = 0;
+        this._geometryEpoch = 0;
         this._frame = null;
         this._worker = null;
         this._workerFailed = false;
@@ -120,6 +122,7 @@ class ParticleSystemCore {
         if (next.dt !== undefined) next.dt = Math.max(0.001, next.dt);
         Object.assign(this._parameters, next);
         this._epoch++;
+        this._geometryEpoch = this._epoch;
         if (this._worker) this._worker.postMessage({
             type: 'parameters', parameters: this._physicsParameters(), epoch: this._epoch
         });
@@ -133,6 +136,11 @@ class ParticleSystemCore {
             : 0;
         this.parameters({ fps: value });
         return this;
+    }
+
+    energy() {
+        const { sum, max, mean, n } = this._energy;
+        return { sum, max, mean, n };
     }
 
     start() {
@@ -228,7 +236,7 @@ class ParticleSystemCore {
                 this._changedGraph();
                 return existing;
             }
-            const edge = new Edge(sourceNode, targetNode, data);
+            const edge = new Edge(sourceNode, targetNode, data, (changedEdge) => this._edgeChanged(changedEdge));
             this.edges[edge._id] = edge;
             const outgoing = this.adjacency[sourceNode._id];
             outgoing[targetNode._id] = outgoing[targetNode._id] || [];
@@ -478,11 +486,12 @@ class ParticleSystemCore {
     }
 
     _updateGeometry(message) {
-        if (message.epoch !== undefined && message.epoch < this._epoch) return;
+        if (message.epoch !== undefined && message.epoch < this._geometryEpoch) return;
         const geometry = message.geometry || [];
         for (let index = 0; index + 2 < geometry.length; index += 3) {
             const node = this.nodes[geometry[index]];
             if (!node) continue;
+            if (message.epoch !== undefined && message.epoch < (node._geometryEpoch || 0)) continue;
             node._p._x = geometry[index + 1];
             node._p._y = geometry[index + 2];
             if (node._particle) {
@@ -490,8 +499,10 @@ class ParticleSystemCore {
                 node._particle.y = node.p.y;
             }
         }
-        if (message.energy) this._energy = message.energy;
-        if (message.bounds) this._boundsTarget = message.bounds;
+        if (message.energy && (message.epoch === undefined || message.epoch >= this._epoch)) {
+            this._energy = message.energy;
+        }
+        this._boundsTarget = this.bounds();
         this._epoch = Math.max(this._epoch, message.epoch || 0);
     }
 
@@ -517,6 +528,8 @@ class ParticleSystemCore {
         if ('fixed' in change) particle.fixed = change.fixed;
         if ('tempMass' in change) particle.tempMass = change.tempMass;
         this._epoch++;
+        node._geometryEpoch = this._epoch;
+        if ('x' in change || 'y' in change) this._boundsTarget = null;
         if (!this._batching) {
             if (this._worker) this._worker.postMessage({
                 type: 'node', id: node._id, changes: change, epoch: this._epoch
@@ -525,8 +538,17 @@ class ParticleSystemCore {
         }
     }
 
+    _edgeChanged(edge) {
+        const spring = this._springs.find((item) => item.id === edge._id);
+        if (!spring) return;
+        spring.length = edge.length;
+        this._changedGraph();
+    }
+
     _changedGraph() {
         this._epoch++;
+        this._geometryEpoch = this._epoch;
+        this._boundsTarget = null;
         if (this._batching) return;
         if (this._worker) this._syncWorker();
         this._wake();
@@ -572,6 +594,7 @@ class ParticleSystemCore {
                 if (event.data.type === 'geometry') {
                     this._workerGeometry = event.data;
                 } else if (event.data.type === 'error') {
+                    this.stop();
                     this.onError(new Error(event.data.message));
                 }
             });
@@ -579,6 +602,7 @@ class ParticleSystemCore {
                 this.onError(event.error || new Error(event.message || 'Arbor physics worker failed.'));
                 this._worker.terminate();
                 this._worker = null;
+                this._boundsTarget = null;
                 this._workerFailed = true;
                 if (!this._paused && this._frame === null) this._scheduleFrame();
             });
@@ -626,7 +650,13 @@ class ParticleSystemCore {
             }
         } else {
             if (!this._lastPhysics || time - this._lastPhysics >= 1000 / this._parameters.fps) {
-                this._energy = stepPhysics(this._particles, this._springs, this._parameters, this._parameters.dt);
+                try {
+                    this._energy = stepPhysics(this._particles, this._springs, this._parameters, this._parameters.dt);
+                } catch (error) {
+                    this.stop();
+                    this.onError(error);
+                    return;
+                }
                 for (const node of Object.values(this.nodes)) {
                     node._p._x = node._particle.x;
                     node._p._y = node._particle.y;
@@ -638,7 +668,7 @@ class ParticleSystemCore {
         this._updateBounds();
         if (this.renderer) this.renderer.redraw();
 
-        if (this._energy.mean < 0.0005 && this._energy.max < 0.001) {
+        if (this._energy.mean < 0.0005 && this._energy.max < 0.001 && (this._energy.motion ?? 0) < 0.001) {
             if (this._settledAt === null) this._settledAt = time;
             if (time - this._settledAt > 800 && !this.tween.busy()) {
                 if (this._worker) this._worker.postMessage({ type: 'stop' });
@@ -652,6 +682,7 @@ class ParticleSystemCore {
     }
 
     _updateBounds() {
+        if (this._boundsLocked && this._bounds) return false;
         const target = this._boundsTarget || this.bounds();
         if (!this._bounds) {
             this._bounds = {

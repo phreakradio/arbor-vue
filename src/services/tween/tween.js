@@ -28,9 +28,10 @@ export default function Tween() {
                 throw new TypeError('A tween requires a node/edge, a non-negative duration, and target values.');
             }
             const options = { ...values };
-            const easingName = String(options.easing || 'linear').toLowerCase();
+            const easingName = String(options.easing || options.ease || 'linear').toLowerCase();
             const delay = Math.max(0, Number(options.delay) || 0) * 1000;
             delete options.easing;
+            delete options.ease;
             delete options.delay;
             const starts = {};
             const colors = {};

@@ -4,6 +4,14 @@ Arbor Vue Changes
 Unreleased
 ----------
 
+  * Stabilize stiff, highly connected spring layouts with adaptive physics steps
+  * Add an interconnected demo preset and raise the demo-only limit to 100 nodes
+  * Keep other nodes moving smoothly and the viewport stable during dragging
+  * Expose friction in the demo and retain motion detection at maximum damping
+  * Add demo controls for parking nodes, graph properties, and advanced physics
+  * Add force-directed and hierarchical branching tree demo presets
+  * Add Arbor-compatible energy, Point, Graphics, colors, Tween, and utility APIs
+  * Synchronize edge length changes and support the documented tween ease option
   * Wake settled simulations when nodes or physics parameters change
   * Keep worker updates from overwriting newer node positions
   * Correct node hit testing on non-square canvases

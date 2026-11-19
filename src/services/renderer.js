@@ -183,6 +183,7 @@ export default class Renderer {
             startY: event.clientY,
             moved: false
         };
+        this.system._boundsLocked = true;
         nearest.node.fixed = true;
         this.canvas.setPointerCapture(event.pointerId);
         event.preventDefault();
@@ -210,6 +211,7 @@ export default class Renderer {
     _releaseDrag() {
         if (!this._drag) return;
         const { node, fixed } = this._drag;
+        this.system._boundsLocked = false;
         node.fixed = fixed;
         node.tempMass = 1000;
         this._drag = null;

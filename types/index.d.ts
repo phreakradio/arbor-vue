@@ -5,8 +5,7 @@ export interface PointLike {
     y: number;
 }
 
-export class Point implements PointLike {
-    constructor(x?: number | PointLike, y?: number);
+export interface Point extends PointLike {
     x: number;
     y: number;
     exploded(): boolean;
@@ -17,8 +16,13 @@ export class Point implements PointLike {
     magnitude(): number;
     normal(): Point;
     normalize(): Point;
-    static random(radius?: number): Point;
 }
+
+export const Point: {
+    new(x?: number | PointLike, y?: number): Point;
+    (x?: number | PointLike, y?: number): Point;
+    random(radius?: number): Point;
+};
 
 export interface NodeData {
     x?: number;
@@ -46,6 +50,7 @@ export interface ParticleSystemOptions {
     gravity?: boolean;
     fps?: number;
     targetFps?: number;
+    timeout?: number;
     dt?: number;
     precision?: number;
     integrator?: 'verlet' | 'euler';
@@ -78,6 +83,7 @@ export interface ParticleSystem {
     parameters(): ParticleSystemOptions;
     parameters(update: Partial<ParticleSystemOptions>): ParticleSystemOptions;
     fps(value?: number): number | this;
+    energy(): { sum: number; max: number; mean: number; n: number };
     start(): this;
     stop(): this;
     destroy(): void;
@@ -120,6 +126,98 @@ export class Renderer {
     redraw(): void;
     destroy(): void;
 }
+
+export interface RGBA { r: number; g: number; b: number; a: number }
+export type ColorValue = string | { r: number; g: number; b: number; a?: number };
+export interface DrawStyle {
+    background?: ColorValue | null;
+    fill?: ColorValue | null;
+    stroke?: ColorValue | null;
+    width?: number;
+    alpha?: number;
+    closed?: boolean;
+}
+export interface TextStyle {
+    font?: string;
+    size?: number;
+    align?: CanvasTextAlign;
+    baseline?: CanvasTextBaseline;
+    color?: ColorValue;
+    alpha?: number;
+    x?: number;
+    y?: number;
+    width?: number;
+}
+export interface Shape {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    r?: number;
+    style: DrawStyle;
+    draw(style?: DrawStyle): void;
+}
+export interface GraphicsContext {
+    size(width?: number, height?: number): { width: number; height: number };
+    clear(x?: number, y?: number, width?: number, height?: number): void;
+    background(color: ColorValue | null): void;
+    background(gray: number, alpha?: number): void;
+    background(red: number, green: number, blue: number, alpha?: number): void;
+    fill(): RGBA | ColorValue | null;
+    fill(color: ColorValue | number, green?: number, blue?: number, alpha?: number): void;
+    noFill(): void;
+    stroke(): RGBA | ColorValue | null;
+    stroke(color: ColorValue | number, green?: number, blue?: number, alpha?: number): void;
+    noStroke(): void;
+    strokeWidth(): number;
+    strokeWidth(width: number): void;
+    Color(color: ColorValue | number, green?: number, blue?: number, alpha?: number): RGBA & { toString(): string };
+    drawStyle(): DrawStyle;
+    drawStyle(style: DrawStyle | string): void;
+    drawStyle(name: string, style: DrawStyle): void;
+    textStyle(): TextStyle;
+    textStyle(style: TextStyle | string): void;
+    textStyle(name: string, style: TextStyle): void;
+    text(text: string, x: number, y: number, options?: TextStyle): void;
+    text(text: string, options: TextStyle): void;
+    textWidth(text: string, style?: TextStyle): number;
+    rect(x: number, y: number, width: number, height: number, radius?: number | DrawStyle, style?: DrawStyle): void;
+    oval(x: number, y: number, width: number, height: number, style?: DrawStyle): void;
+    Rect(x: number, y: number, width: number, height: number, radius?: number | DrawStyle, style?: DrawStyle): Shape;
+    Oval(x: number, y: number, width: number, height: number, style?: DrawStyle): Shape;
+    line(x1: number, y1: number, x2: number, y2: number, style?: DrawStyle): void;
+    line(from: PointLike, to: PointLike, style?: DrawStyle): void;
+    lines(x1: number, y1: number, x2: number, y2: number): void;
+    lines(from: PointLike, to: PointLike): void;
+    drawLines(style?: DrawStyle): void;
+}
+export function Graphics(canvas: HTMLCanvasElement): GraphicsContext;
+export const colors: {
+    CSS: Record<string, string>;
+    validate(value: unknown): boolean;
+    decode(color: ColorValue | number, green?: number, blue?: number, alpha?: number): RGBA | null;
+    encode(color: ColorValue): string | null;
+    blend(color: ColorValue, alpha?: number): string | null;
+};
+export interface TweenController {
+    busy(): boolean;
+    to(target: Node | Edge, duration: number, values: Record<string, unknown>): void;
+    interpolate(progress: number, from: unknown, to: unknown, easing?: string): unknown;
+    tick(now?: number): boolean;
+}
+export function Tween(): TweenController;
+export const etc: {
+    trace(...values: unknown[]): void;
+    dirname(path: string): string;
+    basename(path: string): string | null;
+    ordinalize(value: number): string;
+    objcopy<T>(value: T): T;
+    objcmp(a: unknown, b: unknown, strictOrdering?: boolean): boolean;
+    objkeys(value: object): string[];
+    objmerge<T extends object, U extends object>(destination: T, source: U): T & U;
+    uniq(values: unknown[]): string[];
+    arbor_path(): string | null;
+};
 
 export interface ArborVueProps {
     systemParms?: ParticleSystemOptions;

@@ -34,4 +34,14 @@ describe('Tween', () => {
         expect(node.data.radius).toBe(6);
         expect(tween.busy()).toBe(false);
     });
+
+    it('accepts the documented ease option without adding it to node data', () => {
+        const tween = Tween();
+        const node = { _id: 3, data: { radius: 0 } };
+        const start = Date.now();
+        tween.to(node, 1, { radius: 8, ease: 'quadin' });
+        tween.tick(start + 500);
+        expect(node.data.radius).toBeCloseTo(2);
+        expect(node.data).not.toHaveProperty('ease');
+    });
 });
